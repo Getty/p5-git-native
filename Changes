@@ -1,0 +1,9 @@
+Revision history for Git-Native
+
+{{$NEXT}}
+  - Initial release
+  - Moo-based high-level wrapper around Git::Libgit2 / libgit2
+  - Repository, Reference, Config, Blob, Tree, TreeBuilder, Commit,
+    Remote, Signature, Oid, Error classes
+  - RAII handle ownership via DESTROY -> git_*_free
+  - Phase 1 local-only surface (Phase 4 will add fetch/push/credentials)
