@@ -2,8 +2,17 @@ Revision history for Git-Native
 
 {{$NEXT}}
   - Initial release
-  - Moo-based high-level wrapper around Git::Libgit2 / libgit2
-  - Repository, Reference, Config, Blob, Tree, TreeBuilder, Commit,
-    Remote, Signature, Oid, Error classes
-  - RAII handle ownership via DESTROY -> git_*_free
-  - Phase 1 local-only surface (Phase 4 will add fetch/push/credentials)
+  - Moo-based high-level wrapper around Git::Libgit2 / libgit2 — no
+    fork/exec, no XS
+  - Core classes: Repository, Reference, Config, Blob, Tree, TreeBuilder,
+    Commit, Signature, Oid, Object, Error (Throwable)
+  - Remote class with fetch/push, wildcard-push expansion (libgit2 quirk),
+    push --prune via connect+ls diff
+  - Credential class for SSH key/agent, HTTPS userpass, default, username
+  - General-purpose surface: clone (non-bare), Revwalker, Branch, Tag,
+    status, status_for_path
+  - RAII handle ownership via DESTROY -> git_*_free, child objects hold
+    strong ref to parent to prevent use-after-free
+  - All tests run with GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
+    to avoid polluting the user's gitconfig
+  - Live SSH/HTTPS auth tests (opt-in via TEST_GIT_NATIVE_* env vars)
