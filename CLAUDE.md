@@ -31,8 +31,11 @@ Git::Native::Blob         ->content, ->size, ->oid
 Git::Native::Tree         ->entries, ->entry_by_name
 Git::Native::TreeBuilder  ->insert(name =>, oid =>, mode => 0100644) / ->write
 Git::Native::Commit       ->author, ->committer, ->message, ->tree, ->parents, ->oid
-Git::Native::Remote       ->url
-                          ->fetch / ->push / ->credentials  (Phase 4)
+Git::Native::Remote       ->url, ->name
+                          ->fetch(refspecs =>, credentials =>, prune =>)
+                          ->push(refspecs =>, credentials =>, prune =>)
+                          ->list_refs(credentials =>)
+Git::Native::Credential   ->userpass / ->ssh_key / ->ssh_agent / ->default / ->username
 Git::Native::Signature    name, email, when
 Git::Native::Oid          stringify hex, ->raw (20B), ->short(7)
 Git::Native::Error        isa Throwable::Error; code, klass, message
@@ -52,8 +55,47 @@ Every FFI call with an `int` return code goes through `_check($rc)` in
 `Git::Libgit2::Error->last`, then re-thrown as a `Git::Native::Error`
 (Throwable). No raw libgit2 codes leak above this layer.
 
+## Phase 4 - Network + Auth
+
+`Git::Native::Remote` is the hard layer. Two libgit2 quirks worth knowing:
+
+- **Push wildcards are not expanded by libgit2.** `git_remote_push` rejects
+  `+refs/karr/*:refs/karr/*` with "not a valid reference". `->push` expands
+  patterns client-side via `_owner->reference_names(glob => ...)` and emits
+  one concrete refspec per matching local ref. Fetch is unaffected (server
+  side enumerates).
+- **No native `--prune` on push.** Implemented by `_connect(DIRECTION_PUSH)`
+  + `git_remote_ls` + diffing remote heads against the expanded local set,
+  then prepending `:refs/...` delete refspecs to the push call. `_connect`
+  uses the credential callback too, so prune works against authenticated
+  remotes.
+
+The credential callback (`git_credential_acquire_cb`) is a
+`FFI::Platypus::Closure`. The C signature has a `git_credential **out`
+out-param — FFI::Platypus closures only accept native types + strings, so
+it's declared as plain `opaque` (the pointer value). The Perl closure
+calls the user's coderef, calls `_disown` on the returned
+`Git::Native::Credential` to hand ownership to libgit2, then `memcpy`s
+the pointer into the out address. Returning `undef` from the user
+coderef maps to `GIT_PASSTHROUGH (-30)`, letting libgit2 try the next
+auth type.
+
+The closure must outlive the C call — `Remote` stashes it in
+`$self->{_fetch_keep}` / `_push_keep` / `_connect_keep` for the duration
+of the operation. Out-of-scope mid-call = segv.
+
+Struct sizes for `git_remote_callbacks` / `git_fetch_options` /
+`git_push_options` are over-allocated (256 / 384 / 384) vs probed sizes
+on libgit2 1.5 (120 / 208 / 192) — leaves headroom for newer libgit2
+versions that grow the struct tail. Field offsets up through `payload`
+are stable across 1.5 -> 1.9.
+
 ## Test Hygiene
 
 All tests run with `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null`
 to avoid polluting the user's `~/.gitconfig` (the exact bug Git::Raw
 shipped). Enforced in `t/lib/TestRepo.pm`.
+
+`t/20-remote-local.t` covers the Phase 4 surface end-to-end with two
+working repos linked through a bare repo over `file://` — wildcard push,
+fetch, the PASSTHROUGH credential path, and push `--prune`.

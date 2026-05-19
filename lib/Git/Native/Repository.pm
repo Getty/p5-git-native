@@ -14,6 +14,7 @@ use Git::Native::TreeBuilder ();
 use Git::Native::Commit ();
 use Git::Native::Signature ();
 use Git::Native::Oid ();
+use Git::Native::Remote ();
 
 has _handle => ( is => 'ro', required => 1 );
 
@@ -178,6 +179,36 @@ sub commit_create {
   Git::Libgit2::FFI::git_tree_free($tree_h);
 
   return Git::Native::Oid->from_raw($raw);
+}
+
+# ---------- remotes ----------
+
+sub remote {
+  my ( $self, $name ) = @_;
+  check_rc Git::Libgit2::FFI::git_remote_lookup( \my $r, $self->_handle, $name );
+  return Git::Native::Remote->new( _handle => $r, _owner => $self );
+}
+
+sub remote_create {
+  my ( $self, $name, $url ) = @_;
+  check_rc Git::Libgit2::FFI::git_remote_create( \my $r, $self->_handle, $name, $url );
+  return Git::Native::Remote->new( _handle => $r, _owner => $self );
+}
+
+sub remote_anonymous {
+  my ( $self, $url ) = @_;
+  check_rc Git::Libgit2::FFI::git_remote_create_anonymous( \my $r, $self->_handle, $url );
+  return Git::Native::Remote->new( _handle => $r, _owner => $self );
+}
+
+sub has_remote {
+  my ( $self, $name ) = @_;
+  my $rc = Git::Libgit2::FFI::git_remote_lookup( \my $r, $self->_handle, $name );
+  if ( $rc == 0 ) {
+    Git::Libgit2::FFI::git_remote_free($r);
+    return 1;
+  }
+  return 0;
 }
 
 sub signature_default {

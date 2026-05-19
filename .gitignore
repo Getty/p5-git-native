@@ -65,4 +65,5 @@ blib/
 .env
 .envrc
 Git-Native-*/
+Git-Native-*.tar.gz
 AGENTS.md
