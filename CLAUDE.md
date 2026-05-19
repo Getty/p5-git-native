@@ -120,6 +120,12 @@ fetch, the PASSTHROUGH credential path, and push `--prune`.
 `t/30-revwalk.t`, `t/31-branch.t`, `t/32-tag.t`, `t/33-status.t`,
 `t/34-clone.t` cover the Phase 5 general-purpose surface.
 
+`t/40-remote-ssh.t` / `t/41-remote-https.t` are live network tests —
+both skip unless `TEST_GIT_NATIVE_SSH_URL` / `TEST_GIT_NATIVE_HTTPS_URL`
+is set. CI sets the HTTPS URL to a public repo so every push exercises
+the real TLS + ref-listing path. SSH and token-auth need operator-set
+env vars locally.
+
 ## Phase 5 - General-purpose Surface
 
 Past karr's MVP. Quirks:

@@ -52,4 +52,5 @@ jobs:
           GIT_CONFIG_GLOBAL: /dev/null
           GIT_CONFIG_SYSTEM: /dev/null
           DYLD_FALLBACK_LIBRARY_PATH: /opt/homebrew/lib:/usr/local/lib
+          TEST_GIT_NATIVE_HTTPS_URL: https://github.com/getty/p5-www-chain.git
         run: dzil test

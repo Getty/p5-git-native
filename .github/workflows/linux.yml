@@ -62,4 +62,7 @@ jobs:
         env:
           GIT_CONFIG_GLOBAL: /dev/null
           GIT_CONFIG_SYSTEM: /dev/null
+          # Hits a real public GitHub repo over HTTPS — exercises the
+          # network + TLS + ref-listing path end-to-end. No token needed.
+          TEST_GIT_NATIVE_HTTPS_URL: https://github.com/getty/p5-www-chain.git
         run: dzil test
