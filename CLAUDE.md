@@ -11,15 +11,24 @@ consumers see. Name contrasts deliberately with `Git::Wrapper` and
 ## Class Layout
 
 ```
-Git::Native               ->open / ->init / ->clone
+Git::Native               ->open / ->init / ->clone($url, $path)
 
 Git::Native::Repository   workdir, gitdir, is_bare
-                          ->config, ->reference($name), ->references(prefix => ...)
-                          ->remote($name), ->odb, ->tree_builder
+                          ->config, ->reference($name), ->reference_names(glob =>)
+                          ->reference_create / ->reference_delete / ->reference_exists
+                          ->remote($name) / ->remote_create / ->remote_anonymous / ->has_remote
+                          ->revwalker
+                          ->branch($name, type =>) / ->branches(type =>)
+                          ->branch_create($name, $target) / ->has_branch
+                          ->tag($name) / ->tag_names(pattern =>)
+                          ->tag_create($name, $target, message =>?, tagger =>?)
+                          ->tag_delete($name)
+                          ->status  -> { path => flags, ... }
+                          ->status_for_path($path)
                           ->signature_default
                           ->commit_create(tree =>, parents =>, message =>, ...)
                           ->blob_create_frombuffer($scalar)
-                          ->object($oid)
+                          ->object($oid), ->tree($oid), ->tree_builder
                           DESTROY: git_repository_free
 
 Git::Native::Reference    name, target_oid, is_symbolic
@@ -36,6 +45,14 @@ Git::Native::Remote       ->url, ->name
                           ->push(refspecs =>, credentials =>, prune =>)
                           ->list_refs(credentials =>)
 Git::Native::Credential   ->userpass / ->ssh_key / ->ssh_agent / ->default / ->username
+
+Git::Native::Revwalker    ->push_head / ->push_ref / ->push_oid / ->push_glob / ->push_range
+                          ->hide_head / ->hide_ref / ->hide_oid / ->hide_glob
+                          ->sorting / ->reset / ->simplify_first_parent
+                          ->next  -> Oid | undef    ->all  -> [Oid, ...]
+Git::Native::Branch       ->name / ->refname / ->target / ->is_head / ->is_local / ->is_remote
+                          ->rename($new) / ->delete
+Git::Native::Tag          ->name / ->message / ->target_id   (annotated only)
 Git::Native::Signature    name, email, when
 Git::Native::Oid          stringify hex, ->raw (20B), ->short(7)
 Git::Native::Error        isa Throwable::Error; code, klass, message
@@ -99,3 +116,26 @@ shipped). Enforced in `t/lib/TestRepo.pm`.
 `t/20-remote-local.t` covers the Phase 4 surface end-to-end with two
 working repos linked through a bare repo over `file://` — wildcard push,
 fetch, the PASSTHROUGH credential path, and push `--prune`.
+
+`t/30-revwalk.t`, `t/31-branch.t`, `t/32-tag.t`, `t/33-status.t`,
+`t/34-clone.t` cover the Phase 5 general-purpose surface.
+
+## Phase 5 - General-purpose Surface
+
+Past karr's MVP. Quirks:
+
+- **Clone bare is not exposed.** `git_clone_options` embeds two large
+  structs (`git_checkout_options`, `git_fetch_options`) before the `bare`
+  field; the offset shifts across libgit2 versions, so the wrapper errors
+  on `bare => 1` and points users at `init(bare=>1) + remote + fetch`.
+- **Clone auth callback not yet plumbed.** Same offset story for the
+  embedded fetch_options' callbacks pointer. Public HTTPS / git:// /
+  file:// works today.
+- **`tag()` returns undef for lightweight tags** — they're plain refs
+  under `refs/tags/*` with no annotated object to wrap; use `reference()`
+  instead.
+- **Status uses `git_status_foreach` with a Perl closure** rather than
+  walking `git_status_entry` structs by index. Avoids depending on the
+  `git_diff_file` layout, which grew an extra field in 1.7.
+- **`tag_names()` walks a `git_strarray` via `unpack`** (16 bytes:
+  pointer + count). Stable layout since 1.0.

@@ -7,6 +7,14 @@ use Carp ();
 use Git::Libgit2 qw( init_lib check_rc GIT_REPOSITORY_INIT_BARE );
 use Git::Libgit2::FFI ();
 use Git::Native::Repository ();
+use FFI::Platypus::Buffer qw( scalar_to_buffer );
+
+use constant {
+  GIT_CLONE_OPTIONS_VERSION => 1,
+  # git_clone_options on libgit2 1.5 is ~312 bytes; over-allocate for
+  # forward compat with newer libgit2 versions.
+  CLONE_OPTIONS_SIZE        => 512,
+};
 
 # Ensure libgit2 is initialised before first use.
 my $_init_count = 0;
@@ -43,6 +51,29 @@ sub init {
   my $repo;
   my $flags = $opts{bare} ? GIT_REPOSITORY_INIT_BARE : 0;
   check_rc Git::Libgit2::FFI::git_repository_init( \$repo, $path, $flags );
+  return Git::Native::Repository->new( _handle => $repo );
+}
+
+# clone($url, $local_path) - non-bare only for now.
+# Auth via credentials => sub {...} not yet plumbed; the clone_options
+# struct embeds a fetch_options whose callback offset we'd need to probe
+# per libgit2 version. Bare clones go through init+fetch+HEAD instead -
+# the offset of `bare` is past two large embedded structs and isn't
+# stable across libgit2 versions worth pinning here.
+sub clone {
+  my ( $class, $url, $local_path, %opts ) = @_;
+  Carp::croak "Git::Native->clone requires url and local_path"
+    unless defined $url && defined $local_path;
+  Carp::croak "bare clones not yet supported by Git::Native->clone - use init(bare=>1) + remote + fetch"
+    if $opts{bare};
+  _ensure_init();
+
+  my $buf = "\0" x CLONE_OPTIONS_SIZE;
+  my ($buf_p) = scalar_to_buffer($buf);
+  check_rc Git::Libgit2::FFI::git_clone_options_init( $buf_p, GIT_CLONE_OPTIONS_VERSION );
+
+  my $repo;
+  check_rc Git::Libgit2::FFI::git_clone( \$repo, $url, $local_path, $buf_p );
   return Git::Native::Repository->new( _handle => $repo );
 }
 

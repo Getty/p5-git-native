@@ -15,6 +15,10 @@ use Git::Native::Commit ();
 use Git::Native::Signature ();
 use Git::Native::Oid ();
 use Git::Native::Remote ();
+use Git::Native::Revwalker ();
+use Git::Native::Branch ();
+use Git::Native::Tag ();
+use FFI::Platypus 2.00 ();
 
 has _handle => ( is => 'ro', required => 1 );
 
@@ -209,6 +213,173 @@ sub has_remote {
     return 1;
   }
   return 0;
+}
+
+# ---------- revwalk ----------
+
+sub revwalker {
+  my $self = shift;
+  check_rc Git::Libgit2::FFI::git_revwalk_new( \my $w, $self->_handle );
+  return Git::Native::Revwalker->new( _handle => $w, _owner => $self );
+}
+
+# ---------- branches ----------
+
+sub branch {
+  my ( $self, $name, %opts ) = @_;
+  my $type = $opts{type} // Git::Native::Branch::GIT_BRANCH_LOCAL;
+  check_rc Git::Libgit2::FFI::git_branch_lookup( \my $ref, $self->_handle, $name, $type );
+  return Git::Native::Branch->new( _handle => $ref, _owner => $self, type => $type );
+}
+
+sub has_branch {
+  my ( $self, $name, %opts ) = @_;
+  my $type = $opts{type} // Git::Native::Branch::GIT_BRANCH_LOCAL;
+  my $rc = Git::Libgit2::FFI::git_branch_lookup( \my $ref, $self->_handle, $name, $type );
+  if ( $rc == 0 ) {
+    Git::Libgit2::FFI::git_reference_free($ref);
+    return 1;
+  }
+  return 0;
+}
+
+sub branch_create {
+  my ( $self, $name, $target, %opts ) = @_;
+  my $oid = ref($target) && $target->isa('Git::Native::Oid')
+    ? $target : Git::Native::Oid->from_hex($target);
+  check_rc Git::Libgit2::FFI::git_commit_lookup( \my $commit_h, $self->_handle, $oid->ptr );
+  my $rc = Git::Libgit2::FFI::git_branch_create(
+    \my $ref, $self->_handle, $name, $commit_h, $opts{force} ? 1 : 0,
+  );
+  Git::Libgit2::FFI::git_commit_free($commit_h);
+  check_rc $rc;
+  return Git::Native::Branch->new(
+    _handle => $ref, _owner => $self,
+    type    => Git::Native::Branch::GIT_BRANCH_LOCAL,
+  );
+}
+
+sub branches {
+  my ( $self, %opts ) = @_;
+  my $type = $opts{type} // Git::Native::Branch::GIT_BRANCH_ALL;
+  check_rc Git::Libgit2::FFI::git_branch_iterator_new( \my $iter, $self->_handle, $type );
+  my @out;
+  while (1) {
+    my $rc = Git::Libgit2::FFI::git_branch_next( \my $ref, \my $branch_type, $iter );
+    last if $rc == -31;  # GIT_ITEROVER
+    if ( $rc != 0 ) {
+      Git::Libgit2::FFI::git_branch_iterator_free($iter);
+      check_rc $rc;
+    }
+    push @out, Git::Native::Branch->new(
+      _handle => $ref, _owner => $self, type => $branch_type,
+    );
+  }
+  Git::Libgit2::FFI::git_branch_iterator_free($iter);
+  return \@out;
+}
+
+# ---------- tags ----------
+
+sub tag {
+  my ( $self, $name ) = @_;
+  # Resolve refs/tags/$name -> object id -> git_tag_lookup.
+  my $refname = $name =~ m{^refs/tags/} ? $name : "refs/tags/$name";
+  check_rc Git::Libgit2::FFI::git_reference_lookup( \my $ref, $self->_handle, $refname );
+  my $oidp = Git::Libgit2::FFI::git_reference_target($ref);
+  my $oid  = Git::Native::Oid->from_ptr($oidp);
+  Git::Libgit2::FFI::git_reference_free($ref);
+  my $rc = Git::Libgit2::FFI::git_tag_lookup( \my $tag, $self->_handle, $oid->ptr );
+  if ( $rc != 0 ) {
+    # Not an annotated tag - lightweight. Return undef; caller should use ->reference.
+    return undef;
+  }
+  return Git::Native::Tag->new( _handle => $tag, _owner => $self );
+}
+
+sub tag_create {
+  my ( $self, $name, $target, %args ) = @_;
+  my $oid = ref($target) && $target->isa('Git::Native::Oid')
+    ? $target : Git::Native::Oid->from_hex($target);
+  # Look up target object generically (commit / tree / blob - GIT_OBJECT_ANY = -2).
+  check_rc Git::Libgit2::FFI::git_object_lookup( \my $obj, $self->_handle, $oid->ptr, -2 );
+
+  my $raw = "\0" x 20;
+  my ($oid_p) = FFI::Platypus::Buffer::scalar_to_buffer($raw);
+
+  if ( defined $args{message} ) {
+    my $tagger = $args{tagger} // $self->signature_default;
+    my $rc = Git::Libgit2::FFI::git_tag_create(
+      $oid_p, $self->_handle, $name, $obj,
+      $tagger->_handle, $args{message},
+      $args{force} ? 1 : 0,
+    );
+    Git::Libgit2::FFI::git_object_free($obj);
+    check_rc $rc;
+  }
+  else {
+    my $rc = Git::Libgit2::FFI::git_tag_create_lightweight(
+      $oid_p, $self->_handle, $name, $obj, $args{force} ? 1 : 0,
+    );
+    Git::Libgit2::FFI::git_object_free($obj);
+    check_rc $rc;
+  }
+  return Git::Native::Oid->from_raw($raw);
+}
+
+sub tag_delete {
+  my ( $self, $name ) = @_;
+  check_rc Git::Libgit2::FFI::git_tag_delete( $self->_handle, $name );
+  return $self;
+}
+
+sub tag_names {
+  my ( $self, %opts ) = @_;
+  # git_strarray on stack: {char **strings; size_t count} = 16 bytes.
+  my $buf = "\0" x 16;
+  my ($p) = FFI::Platypus::Buffer::scalar_to_buffer($buf);
+  if ( $opts{pattern} ) {
+    check_rc Git::Libgit2::FFI::git_tag_list_match( $p, $opts{pattern}, $self->_handle );
+  }
+  else {
+    check_rc Git::Libgit2::FFI::git_tag_list( $p, $self->_handle );
+  }
+  # Unpack strings ptr (at offset 0) and count (at offset 8).
+  my ( $strings_ptr, $count ) = unpack 'Q Q', $buf;
+  my @names;
+  if ( $count > 0 && $strings_ptr ) {
+    my $ffi = Git::Libgit2::FFI::ffi();
+    for my $i ( 0 .. $count - 1 ) {
+      my $sp = $ffi->cast( 'opaque', 'opaque[' . ( $i + 1 ) . ']', $strings_ptr )->[$i];
+      my $s  = $ffi->cast( 'opaque', 'string', $sp );
+      push @names, $s;
+    }
+  }
+  Git::Libgit2::FFI::git_strarray_free($p);
+  return \@names;
+}
+
+# ---------- status ----------
+
+# status() returns hashref { path => status_flags, ... }.
+# status flags are the GIT_STATUS_* bitfield from libgit2.
+sub status {
+  my $self = shift;
+  my %out;
+  my $ffi = Git::Libgit2::FFI::ffi();
+  my $cb = $ffi->closure( sub {
+    my ( $path, $flags, $payload ) = @_;
+    $out{$path} = $flags;
+    return 0;
+  });
+  check_rc Git::Libgit2::FFI::git_status_foreach( $self->_handle, $cb, undef );
+  return \%out;
+}
+
+sub status_for_path {
+  my ( $self, $path ) = @_;
+  check_rc Git::Libgit2::FFI::git_status_file( \my $flags, $self->_handle, $path );
+  return $flags;
 }
 
 sub signature_default {
