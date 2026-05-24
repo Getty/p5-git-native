@@ -1,7 +1,6 @@
 # ABSTRACT: A Git reference (branch, tag, HEAD)
 
 package Git::Native::Reference;
-our $VERSION = '0.001';
 use Moo;
 use Git::Libgit2 qw( check_rc );
 use Git::Libgit2::FFI ();

@@ -1,7 +1,6 @@
 # ABSTRACT: Build a libgit2 tree object entry by entry
 
 package Git::Native::TreeBuilder;
-our $VERSION = '0.001';
 use Moo;
 use Git::Libgit2 qw( check_rc );
 use Git::Libgit2::FFI ();

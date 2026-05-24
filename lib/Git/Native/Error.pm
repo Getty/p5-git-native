@@ -1,7 +1,6 @@
 # ABSTRACT: Exception class for Git::Native
 
 package Git::Native::Error;
-our $VERSION = '0.001';
 use Moo;
 extends 'Throwable::Error';
 

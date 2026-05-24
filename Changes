@@ -1,6 +1,9 @@
 Revision history for Git-Native
 
 {{$NEXT}}
+  - Switch to version_finder = :MainModule; $VERSION only in main module
+  - Add tests: Error throw/catch (t/11-error.t), Credential constructors
+    (t/35-credential.t); expand 00-load.t to compile-check all modules
   - Initial release
   - Moo-based high-level wrapper around Git::Libgit2 / libgit2 — no
     fork/exec, no XS

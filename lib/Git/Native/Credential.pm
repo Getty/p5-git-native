@@ -1,11 +1,13 @@
 # ABSTRACT: A libgit2 credential (passed back from acquire callbacks)
 
 package Git::Native::Credential;
-our $VERSION = '0.001';
 use Moo;
 use Carp ();
-use Git::Libgit2 qw( check_rc );
+use Git::Libgit2 qw( check_rc init_lib );
 use Git::Libgit2::FFI ();
+
+# Ensure libgit2 FFI is initialised before first use of this module.
+init_lib();
 
 has _handle => ( is => 'rw', required => 1 );
 

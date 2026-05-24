@@ -1,7 +1,6 @@
 # ABSTRACT: A libgit2 remote (fetch / push)
 
 package Git::Native::Remote;
-our $VERSION = '0.001';
 use Moo;
 use Carp ();
 use Git::Libgit2 qw( check_rc );

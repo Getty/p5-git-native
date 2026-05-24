@@ -1,7 +1,6 @@
 # ABSTRACT: A libgit2 repository handle
 
 package Git::Native::Repository;
-our $VERSION = '0.001';
 use Moo;
 use Carp ();
 use Git::Libgit2 qw( check_rc GIT_OBJECT_BLOB GIT_OBJECT_TREE GIT_OBJECT_COMMIT );

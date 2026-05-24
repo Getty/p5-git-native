@@ -1,7 +1,6 @@
 # ABSTRACT: A libgit2 branch (thin wrapper over git_reference)
 
 package Git::Native::Branch;
-our $VERSION = '0.001';
 use Moo;
 use Git::Libgit2 qw( check_rc );
 use Git::Libgit2::FFI ();

@@ -1,7 +1,6 @@
 # ABSTRACT: A libgit2 blob object
 
 package Git::Native::Blob;
-our $VERSION = '0.001';
 use Moo;
 use FFI::Platypus 2.00;
 use Git::Libgit2::FFI ();
