@@ -46,13 +46,13 @@ sub DEMOLISH {
 
 1;
 
-=head1 SYNOPSIS
+=synopsis
 
   my $tb = $repo->tree_builder;
   $tb->insert(name => 'hello.txt', oid => $blob_oid, mode => 0100644);
   my $tree_oid = $tb->write;
 
-=head1 DESCRIPTION
+=description
 
 In-memory tree assembler. C<insert>/C<remove> mutate the builder;
 C<write> persists it as a tree object and returns its OID.

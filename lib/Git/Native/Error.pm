@@ -16,7 +16,7 @@ around BUILDARGS => sub {
 
 1;
 
-=head1 SYNOPSIS
+=synopsis
 
   use Git::Native::Error;
   Git::Native::Error->throw(
@@ -25,7 +25,7 @@ around BUILDARGS => sub {
     message => 'object not found',
   );
 
-=head1 DESCRIPTION
+=description
 
 Throwable exception used by L<Git::Native> when libgit2 reports an error.
 Attributes mirror the C C<git_error> struct plus the return code.

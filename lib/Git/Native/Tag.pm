@@ -25,14 +25,14 @@ sub DEMOLISH {
 
 1;
 
-=head1 SYNOPSIS
+=synopsis
 
   my $tag = $repo->tag('v1.0.0');
   say $tag->name;          # 'v1.0.0'
   say $tag->message;       # tagger message
   say $tag->target_id->hex;
 
-=head1 DESCRIPTION
+=description
 
 Wraps a libgit2 annotated tag object. Lightweight tags are plain refs
 under C<refs/tags/*> and don't get a Tag wrapper - look them up with

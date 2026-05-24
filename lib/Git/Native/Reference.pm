@@ -38,14 +38,14 @@ sub DEMOLISH {
 
 1;
 
-=head1 SYNOPSIS
+=synopsis
 
   my $ref = $repo->reference('refs/heads/main');
   say $ref->name;
   say $ref->target;     # OID
   $ref->delete;
 
-=head1 DESCRIPTION
+=description
 
 A Git reference. Direct refs return an C<oid> target; symbolic refs
 need C<peel> (TODO) to resolve.

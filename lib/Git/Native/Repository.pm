@@ -409,7 +409,7 @@ sub DEMOLISH {
 
 1;
 
-=head1 SYNOPSIS
+=synopsis
 
   my $repo = Git::Native->open('/path/to/.git');
   my $main = $repo->reference('refs/heads/main');
@@ -426,7 +426,7 @@ sub DEMOLISH {
     message    => 'add greeting',
   );
 
-=head1 DESCRIPTION
+=description
 
 The main entry point for working with a Git repository through
 L<Git::Native>. Wraps C<git_repository*>; freed automatically.

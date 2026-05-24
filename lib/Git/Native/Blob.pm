@@ -38,13 +38,13 @@ sub DEMOLISH {
 
 1;
 
-=head1 SYNOPSIS
+=synopsis
 
   my $blob = $repo->blob($oid);
   say $blob->size;
   say $blob->content;
 
-=head1 DESCRIPTION
+=description
 
 A libgit2 blob, exposing C<oid>, C<size>, C<content>. Freed when the
 object goes out of scope.

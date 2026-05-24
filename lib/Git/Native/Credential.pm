@@ -77,7 +77,7 @@ sub DEMOLISH {
 
 1;
 
-=head1 SYNOPSIS
+=synopsis
 
   use Git::Native::Credential;
 
@@ -97,7 +97,7 @@ sub DEMOLISH {
     passphrase  => '',
   );
 
-=head1 DESCRIPTION
+=description
 
 Returned from the C<credentials> callback you pass to
 L<Git::Native::Remote>'s C<fetch>/C<push>. libgit2 takes ownership of

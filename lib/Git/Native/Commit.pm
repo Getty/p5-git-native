@@ -56,13 +56,13 @@ sub DEMOLISH {
 
 1;
 
-=head1 SYNOPSIS
+=synopsis
 
   my $commit = $repo->commit($oid);
   say $commit->message;
   say $commit->tree_oid;
 
-=head1 DESCRIPTION
+=description
 
 A libgit2 commit object exposing C<oid>, C<message>, C<tree>, C<tree_oid>,
 C<parent_count>, C<parent_oids>.

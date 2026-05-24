@@ -41,7 +41,7 @@ sub DEMOLISH {
 
 1;
 
-=head1 SYNOPSIS
+=synopsis
 
   my $sig = Git::Native::Signature->new(
     name  => 'Test',
@@ -50,7 +50,7 @@ sub DEMOLISH {
     offset => 0,
   );
 
-=head1 DESCRIPTION
+=description
 
 A Git signature (name + email + timestamp). Wraps C<git_signature*>;
 freed automatically when the object goes out of scope.

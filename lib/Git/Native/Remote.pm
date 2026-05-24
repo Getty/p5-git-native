@@ -368,7 +368,7 @@ sub DEMOLISH {
 
 1;
 
-=head1 SYNOPSIS
+=synopsis
 
   my $remote = $repo->remote('origin');
   say $remote->url;
@@ -394,7 +394,7 @@ sub DEMOLISH {
     },
   );
 
-=head1 DESCRIPTION
+=description
 
 Wraps C<git_remote*>. Supports the libgit2 credential acquire callback,
 so SSH-agent / SSH-key / HTTPS-token auth all work without shelling out

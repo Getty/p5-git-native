@@ -78,7 +78,7 @@ sub DEMOLISH {
 
 1;
 
-=head1 SYNOPSIS
+=synopsis
 
   my $walker = $repo->revwalker;
   $walker->push_head;
@@ -87,7 +87,7 @@ sub DEMOLISH {
     say $oid->hex;
   }
 
-=head1 DESCRIPTION
+=description
 
 Wraps libgit2's C<git_revwalk*>. Push starting points (commits, refs,
 globs), optionally hide commits to exclude, then iterate with C<next>.

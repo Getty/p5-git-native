@@ -1,12 +1,11 @@
 Revision history for Git-Native
 
 {{$NEXT}}
-  - Switch to version_finder = :MainModule; $VERSION only in main module
-  - Add tests: Error throw/catch (t/11-error.t), Credential constructors
-    (t/35-credential.t); expand 00-load.t to compile-check all modules
   - Initial release
   - Moo-based high-level wrapper around Git::Libgit2 / libgit2 — no
     fork/exec, no XS
+  - Tests: Error throw/catch (t/11-error.t), Credential constructors
+    (t/35-credential.t), compile-check of all modules (t/00-load.t)
   - Core classes: Repository, Reference, Config, Blob, Tree, TreeBuilder,
     Commit, Signature, Oid, Object, Error (Throwable)
   - Remote class with fetch/push, wildcard-push expansion (libgit2 quirk),

@@ -79,7 +79,7 @@ sub clone {
 
 1;
 
-=head1 SYNOPSIS
+=synopsis
 
   use Git::Native;
 
@@ -99,7 +99,7 @@ sub clone {
     message    => 'add greeting',
   );
 
-=head1 DESCRIPTION
+=description
 
 L<Git::Native> is a Moo wrapper around L<Git::Libgit2> (which binds
 C<libgit2> via L<FFI::Platypus>). Use it instead of L<Git::Wrapper> or
@@ -111,22 +111,26 @@ Contrast:
 - L<Git::Raw>: XS bindings, unmaintained since 2022, known segfaults
 - L<Git::PurePerl>: pure-Perl read-only, no push/pull
 
-=head1 METHODS
+=method open
 
-=head2 open($path)
+  my $repo = Git::Native->open($path);
 
 Open an existing repository at C<$path>. Returns a L<Git::Native::Repository>.
 
-=head2 open_ext($start_path, %opts)
+=method open_ext
+
+  my $repo = Git::Native->open_ext($start_path, %opts);
 
 Same as C<git_repository_open_ext> — walks up from C<$start_path>.
 C<flags> and C<ceiling_dirs> are forwarded.
 
-=head2 init($path, %opts)
+=method init
+
+  my $repo = Git::Native->init($path, bare => 1);
 
 Initialise a new repository. C<bare =E<gt> 1> creates a bare repo.
 
-=head1 SEE ALSO
+=seealso
 
 L<Alien::Libgit2>, L<Git::Libgit2>, L<FFI::Platypus>, L<libgit2|https://libgit2.org/>
 

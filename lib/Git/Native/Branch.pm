@@ -56,7 +56,7 @@ sub DEMOLISH {
 
 1;
 
-=head1 SYNOPSIS
+=synopsis
 
   my $b = $repo->branch('main');
   say $b->name;          # 'main'
@@ -64,10 +64,10 @@ sub DEMOLISH {
   say $b->target->hex;   # commit OID
   $b->rename('trunk');
 
-=head1 DESCRIPTION
+=description
 
 Wraps a libgit2 branch (which is really a C<git_reference> under
 C<refs/heads/*> or C<refs/remotes/*>). Constructed by
-L<Git::Native::Repository/branch> and L</branches>.
+L<Git::Native::Repository/branch> and L<Git::Native::Repository/branches>.
 
 =cut

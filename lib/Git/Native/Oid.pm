@@ -62,14 +62,14 @@ use overload
 
 1;
 
-=head1 SYNOPSIS
+=synopsis
 
   my $oid = Git::Native::Oid->from_hex('abcd...');
   say $oid;          # full hex
   say $oid->short;   # 7 chars
   $oid->ptr;         # C pointer for libgit2
 
-=head1 DESCRIPTION
+=description
 
 A SHA-1 OID. Holds the raw 20 bytes; everything else is derived.
 The raw scalar is the anchor for any pointer libgit2 reads it through -

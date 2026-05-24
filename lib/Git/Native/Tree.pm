@@ -56,14 +56,14 @@ sub DEMOLISH {
 
 1;
 
-=head1 SYNOPSIS
+=synopsis
 
   my $tree = $commit->tree;
   for my $entry (@{ $tree->entries }) {
     say "$entry->{name} -> $entry->{oid}";
   }
 
-=head1 DESCRIPTION
+=description
 
 A libgit2 tree object. Entries are returned as plain hashrefs with
 C<name>, C<oid>, C<mode>, C<type>.
