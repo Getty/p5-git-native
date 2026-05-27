@@ -3,6 +3,7 @@ use Git::Native;
 use Git::Native::Blob;
 use Git::Native::Branch;
 use Git::Native::Commit;
+use Git::Native::Config;
 use Git::Native::Credential;
 use Git::Native::Error;
 use Git::Native::Oid;
@@ -21,5 +22,7 @@ ok( Git::Native->can('init'),     'Git::Native->init exists' );
 ok( Git::Native::Error->can('throw'),       'Error->throw exists' );
 ok( Git::Native::Credential->can('userpass'), 'Credential->userpass exists' );
 ok( Git::Native::Remote->can('new'),        'Remote->new exists' );
+ok( Git::Native::Config->can('get_string'), 'Config->get_string exists' );
+ok( Git::Native->can('reference_name_is_valid'), 'Git::Native->reference_name_is_valid exists' );
 
 done_testing;

@@ -1,6 +1,11 @@
 Revision history for Git-Native
 
 {{$NEXT}}
+  - New Git::Native::Config class - get_string / set_string / snapshot
+  - Repository: config (live), config_snapshot (read-only), and a
+    config_string($key) convenience that reads off a fresh snapshot
+  - Git::Native->reference_name_is_valid($name) - static refname
+    validator, no repository handle required
 
 0.002     2026-05-27 18:02:46Z
   - Initial release

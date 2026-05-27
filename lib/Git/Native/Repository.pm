@@ -11,6 +11,7 @@ use Git::Native::Blob ();
 use Git::Native::Tree ();
 use Git::Native::TreeBuilder ();
 use Git::Native::Commit ();
+use Git::Native::Config ();
 use Git::Native::Signature ();
 use Git::Native::Oid ();
 use Git::Native::Remote ();
@@ -252,6 +253,28 @@ sub has_remote {
     return 1;
   }
   return 0;
+}
+
+# ---------- config ----------
+
+# Live, writable config (use set_string here).
+sub config {
+  my $self = shift;
+  check_rc Git::Libgit2::FFI::git_repository_config( \my $cfg, $self->_handle );
+  return Git::Native::Config->new( _handle => $cfg, _owner => $self );
+}
+
+# Read-only snapshot - required for reliable git_config_get_string.
+sub config_snapshot {
+  my $self = shift;
+  check_rc Git::Libgit2::FFI::git_repository_config_snapshot( \my $cfg, $self->_handle );
+  return Git::Native::Config->new( _handle => $cfg, _owner => $self );
+}
+
+# Convenience: read one key off a fresh snapshot. undef when unset.
+sub config_string {
+  my ( $self, $key ) = @_;
+  return $self->config_snapshot->get_string($key);
 }
 
 # ---------- revwalk ----------

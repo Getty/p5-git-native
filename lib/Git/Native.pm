@@ -85,6 +85,16 @@ sub clone {
   return Git::Native::Repository->new( _handle => $repo );
 }
 
+# reference_name_is_valid($name) - does libgit2 accept this refname?
+# No repository required. Returns 1 (valid) or 0 (invalid).
+sub reference_name_is_valid {
+  my ( $class, $name ) = @_;
+  return 0 unless defined $name;
+  _ensure_init();
+  my $rc = Git::Libgit2::FFI::git_reference_name_is_valid( \my $valid, $name );
+  return ( $rc == 0 && $valid ) ? 1 : 0;
+}
+
 1;
 
 =synopsis
@@ -137,6 +147,14 @@ C<flags> and C<ceiling_dirs> are forwarded.
   my $repo = Git::Native->init($path, bare => 1);
 
 Initialise a new repository. C<bare =E<gt> 1> creates a bare repo.
+
+=method reference_name_is_valid
+
+  Git::Native->reference_name_is_valid('refs/heads/main');   # 1
+  Git::Native->reference_name_is_valid('refs/bad..name');    # 0
+
+Class method. Returns true if C<libgit2> considers C<$name> a valid
+reference name. No repository handle required.
 
 =seealso
 
