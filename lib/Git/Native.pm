@@ -51,7 +51,15 @@ sub init {
   my $repo;
   my $flags = $opts{bare} ? GIT_REPOSITORY_INIT_BARE : 0;
   check_rc Git::Libgit2::FFI::git_repository_init( \$repo, $path, $flags );
-  return Git::Native::Repository->new( _handle => $repo );
+  my $r = Git::Native::Repository->new( _handle => $repo );
+  # Pin HEAD at the requested branch regardless of the compiled-in default
+  # or ambient init.defaultBranch (sterile CI containers default to
+  # 'master'). The branch may be unborn at this point - that's fine.
+  if ( defined( my $branch = $opts{initial_branch} ) ) {
+    $branch = "refs/heads/$branch" unless $branch =~ m{^refs/};
+    $r->set_head($branch);
+  }
+  return $r;
 }
 
 # clone($url, $local_path) - non-bare only for now.

@@ -24,6 +24,57 @@ sub is_symbolic {
   Git::Libgit2::FFI::git_reference_type( $_[0]->_handle ) == 2 ? 1 : 0;
 }
 
+# Target refname of a symbolic ref (e.g. HEAD -> 'refs/heads/main');
+# undef for a direct ref.
+sub symbolic_target {
+  Git::Libgit2::FFI::git_reference_symbolic_target( $_[0]->_handle );
+}
+
+# Human-readable short name: 'refs/heads/main' -> 'main'.
+sub shorthand {
+  Git::Libgit2::FFI::git_reference_shorthand( $_[0]->_handle );
+}
+
+sub is_branch {
+  Git::Libgit2::FFI::git_reference_is_branch( $_[0]->_handle ) ? 1 : 0;
+}
+
+sub is_remote {
+  Git::Libgit2::FFI::git_reference_is_remote( $_[0]->_handle ) ? 1 : 0;
+}
+
+sub is_tag {
+  Git::Libgit2::FFI::git_reference_is_tag( $_[0]->_handle ) ? 1 : 0;
+}
+
+# Follow symbolic refs until a direct one is reached. Returns a fresh
+# Reference; the original handle stays valid.
+sub resolve {
+  my $self = shift;
+  check_rc Git::Libgit2::FFI::git_reference_resolve( \my $ref, $self->_handle );
+  return Git::Native::Reference->new( _handle => $ref, _owner => $self->_owner );
+}
+
+# Point a direct ref at a new OID. Returns the new Reference; fails on a
+# symbolic ref (use symbolic_set_target there).
+sub set_target {
+  my ( $self, $oid, %opts ) = @_;
+  $oid = Git::Native::Oid->from_hex($oid) if !ref $oid;
+  check_rc Git::Libgit2::FFI::git_reference_set_target(
+    \my $ref, $self->_handle, $oid->ptr, $opts{message} // '',
+  );
+  return Git::Native::Reference->new( _handle => $ref, _owner => $self->_owner );
+}
+
+# Repoint a symbolic ref at a new target refname. Returns the new Reference.
+sub symbolic_set_target {
+  my ( $self, $target, %opts ) = @_;
+  check_rc Git::Libgit2::FFI::git_reference_symbolic_set_target(
+    \my $ref, $self->_handle, $target, $opts{message} // '',
+  );
+  return Git::Native::Reference->new( _handle => $ref, _owner => $self->_owner );
+}
+
 sub delete {
   my $self = shift;
   check_rc Git::Libgit2::FFI::git_reference_delete( $self->_handle );
@@ -41,13 +92,24 @@ sub DEMOLISH {
 =synopsis
 
   my $ref = $repo->reference('refs/heads/main');
-  say $ref->name;
+  say $ref->name;       # refs/heads/main
+  say $ref->shorthand;  # main
   say $ref->target;     # OID
   $ref->delete;
 
+  my $head = $repo->reference('HEAD');
+  say $head->symbolic_target;   # refs/heads/main
+  say $head->resolve->target;   # OID HEAD points at
+
 =description
 
-A Git reference. Direct refs return an C<oid> target; symbolic refs
-need C<peel> (TODO) to resolve.
+A Git reference. Direct refs carry an C<oid> C<target>; symbolic refs
+carry a C<symbolic_target> (a refname) and C<resolve> to a direct ref.
+
+Read accessors: C<name>, C<shorthand>, C<target>, C<symbolic_target>,
+C<is_symbolic>, C<is_branch>, C<is_remote>, C<is_tag>.
+
+Mutators return a fresh Reference: C<set_target> (direct refs),
+C<symbolic_set_target> (symbolic refs), plus C<delete>.
 
 =cut

@@ -83,6 +83,46 @@ sub reference_names {
   return \@names;
 }
 
+# Resolved HEAD reference, or undef when HEAD is unborn / missing
+# (fresh repo with no commits yet).
+sub head {
+  my $self = shift;
+  my $rc = Git::Libgit2::FFI::git_repository_head( \my $ref, $self->_handle );
+  return undef if $rc == -9 || $rc == -3;   # GIT_EUNBORNBRANCH / GIT_ENOTFOUND
+  check_rc $rc;
+  return Git::Native::Reference->new( _handle => $ref, _owner => $self );
+}
+
+sub head_unborn {
+  my $rc = Git::Libgit2::FFI::git_repository_head_unborn( $_[0]->_handle );
+  check_rc $rc if $rc < 0;
+  return $rc ? 1 : 0;
+}
+
+sub head_detached {
+  my $rc = Git::Libgit2::FFI::git_repository_head_detached( $_[0]->_handle );
+  check_rc $rc if $rc < 0;
+  return $rc ? 1 : 0;
+}
+
+# Point HEAD at a branch refname (e.g. 'refs/heads/main'). The branch may
+# be unborn - this is how you pin 'main' on a freshly init'd repo.
+sub set_head {
+  my ( $self, $refname ) = @_;
+  check_rc Git::Libgit2::FFI::git_repository_set_head( $self->_handle, $refname );
+  return $self;
+}
+
+sub reference_symbolic_create {
+  my ( $self, $name, $target, %opts ) = @_;
+  check_rc Git::Libgit2::FFI::git_reference_symbolic_create(
+    \my $ref, $self->_handle, $name, $target,
+    $opts{force} ? 1 : 0,
+    $opts{message} // '',
+  );
+  return Git::Native::Reference->new( _handle => $ref, _owner => $self );
+}
+
 # ---------- blobs / trees / commits ----------
 
 sub blob_create_frombuffer {

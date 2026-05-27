@@ -11,11 +11,14 @@ consumers see. Name contrasts deliberately with `Git::Wrapper` and
 ## Class Layout
 
 ```
-Git::Native               ->open / ->init / ->clone($url, $path)
+Git::Native               ->open / ->init($path, bare =>?, initial_branch =>?) / ->clone($url, $path)
 
 Git::Native::Repository   workdir, gitdir, is_bare
                           ->config, ->reference($name), ->reference_names(glob =>)
                           ->reference_create / ->reference_delete / ->reference_exists
+                          ->reference_symbolic_create($name, $target, force =>?, message =>?)
+                          ->head -> Reference|undef / ->head_unborn / ->head_detached
+                          ->set_head($refname)
                           ->remote($name) / ->remote_create / ->remote_anonymous / ->has_remote
                           ->revwalker
                           ->branch($name, type =>) / ->branches(type =>)
@@ -31,15 +34,20 @@ Git::Native::Repository   workdir, gitdir, is_bare
                           ->object($oid), ->tree($oid), ->tree_builder
                           DESTROY: git_repository_free
 
-Git::Native::Reference    name, target_oid, is_symbolic
-                          ->set_target($oid, message => ...) / ->delete / ->peel($kind)
+Git::Native::Reference    name, shorthand, target -> Oid, symbolic_target, is_symbolic
+                          is_branch / is_remote / is_tag
+                          ->resolve -> Reference (follows symbolic to direct)
+                          ->set_target($oid, message =>?)            (direct refs)
+                          ->symbolic_set_target($refname, message =>?) (symbolic refs)
+                          ->delete
 
 Git::Native::Config       ->get_string / ->get_bool / ->set_string / ->snapshot
 
 Git::Native::Blob         ->content, ->size, ->oid
 Git::Native::Tree         ->entries, ->entry_by_name
 Git::Native::TreeBuilder  ->insert(name =>, oid =>, mode => 0100644) / ->write
-Git::Native::Commit       ->author, ->committer, ->message, ->tree, ->parents, ->oid
+Git::Native::Commit       ->oid, ->message, ->summary, ->time (epoch), ->time_offset (min)
+                          ->tree, ->tree_oid, ->parent_count, ->parent_oids
 Git::Native::Remote       ->url, ->name
                           ->fetch(refspecs =>, credentials =>, prune =>)
                           ->push(refspecs =>, credentials =>, prune =>)

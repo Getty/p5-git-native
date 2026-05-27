@@ -13,6 +13,11 @@ Revision history for Git-Native
   - Credential class for SSH key/agent, HTTPS userpass, default, username
   - General-purpose surface: clone (non-bare), Revwalker, Branch, Tag,
     status, status_for_path
+  - Reference accessors/predicates: resolve, shorthand, symbolic_target,
+    is_branch/is_remote/is_tag, plus set_target / symbolic_set_target
+  - Repository HEAD surface: head, head_unborn, head_detached, set_head,
+    reference_symbolic_create; init(initial_branch => 'main') pins HEAD
+  - Commit accessors: summary, time (epoch), time_offset (minutes)
   - RAII handle ownership via DESTROY -> git_*_free, child objects hold
     strong ref to parent to prevent use-after-free
   - All tests run with GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null

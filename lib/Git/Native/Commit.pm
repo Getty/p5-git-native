@@ -21,6 +21,21 @@ sub message {
   Git::Libgit2::FFI::git_commit_message( $_[0]->_handle );
 }
 
+# First paragraph of the message, whitespace-collapsed (libgit2-side).
+sub summary {
+  Git::Libgit2::FFI::git_commit_summary( $_[0]->_handle );
+}
+
+# Commit time as a Unix epoch (committer's time).
+sub time {
+  Git::Libgit2::FFI::git_commit_time( $_[0]->_handle );
+}
+
+# Timezone offset of the commit time, in minutes east of UTC.
+sub time_offset {
+  Git::Libgit2::FFI::git_commit_time_offset( $_[0]->_handle );
+}
+
 sub tree {
   my $self = shift;
   check_rc Git::Libgit2::FFI::git_commit_tree( \my $t, $self->_handle );
@@ -60,11 +75,14 @@ sub DEMOLISH {
 
   my $commit = $repo->commit($oid);
   say $commit->message;
+  say $commit->summary;
+  say scalar gmtime $commit->time;
   say $commit->tree_oid;
 
 =description
 
-A libgit2 commit object exposing C<oid>, C<message>, C<tree>, C<tree_oid>,
-C<parent_count>, C<parent_oids>.
+A libgit2 commit object exposing C<oid>, C<message>, C<summary>,
+C<time> (Unix epoch), C<time_offset> (minutes east of UTC), C<tree>,
+C<tree_oid>, C<parent_count>, C<parent_oids>.
 
 =cut
