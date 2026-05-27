@@ -9,8 +9,17 @@ on:
 jobs:
   macos:
     runs-on: macos-14
+    env:
+      # Job-level so they reach the composite action's dzil test step.
+      GIT_CONFIG_GLOBAL: /dev/null
+      GIT_CONFIG_SYSTEM: /dev/null
+      # Help FFI::Platypus find Homebrew libs (Apple Silicon path).
+      DYLD_FALLBACK_LIBRARY_PATH: /opt/homebrew/lib:/usr/local/lib
+      TEST_GIT_NATIVE_HTTPS_URL: https://github.com/getty/p5-www-chain.git
     steps:
       - uses: actions/checkout@v4
+      # Git::Libgit2 and Alien::Libgit2 are on CPAN, but CI builds them from
+      # the sibling repos' HEAD so a fix here is exercised before its release.
       - name: Checkout Alien::Libgit2
         uses: actions/checkout@v4
         with:
@@ -30,27 +39,28 @@ jobs:
       - name: perl -V
         run: perl -V
       - name: Install Dist::Zilla
-        run: cpanm -nq Dist::Zilla Dist::Zilla::PluginBundle::Author::GETTY
+        env:
+          PERL_CPANM_OPT: --mirror http://cpan.metacpan.org --mirror-only
+        run: cpanm -nq Dist::Zilla
       - name: Install Alien::Libgit2 from sibling repo
         working-directory: vendor/alien-libgit2
+        env:
+          PERL_CPANM_OPT: --mirror http://cpan.metacpan.org --mirror-only
+        shell: bash
         run: |
+          set -euo pipefail
           dzil authordeps --missing | cpanm -nq
-          dzil listdeps --missing | cpanm -nq
+          dzil listdeps --author --missing | cpanm -nq
           dzil install
       - name: Install Git::Libgit2 from sibling repo
         working-directory: vendor/git-libgit2
-        run: |
-          dzil authordeps --missing | cpanm -nq
-          dzil listdeps --missing | cpanm -nq
-          dzil install
-      - name: Install dependencies
-        run: |
-          dzil authordeps --missing | cpanm -nq
-          dzil listdeps --missing | cpanm -nq
-      - name: Run tests
         env:
-          GIT_CONFIG_GLOBAL: /dev/null
-          GIT_CONFIG_SYSTEM: /dev/null
-          DYLD_FALLBACK_LIBRARY_PATH: /opt/homebrew/lib:/usr/local/lib
-          TEST_GIT_NATIVE_HTTPS_URL: https://github.com/getty/p5-www-chain.git
-        run: dzil test
+          PERL_CPANM_OPT: --mirror http://cpan.metacpan.org --mirror-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          dzil authordeps --missing | cpanm -nq
+          dzil listdeps --author --missing | cpanm -nq
+          dzil install
+      - name: dzil test
+        uses: Getty/p5-dist-zilla-pluginbundle-author-getty/.github/actions/dzil-test@main

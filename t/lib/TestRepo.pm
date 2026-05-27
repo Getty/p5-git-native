@@ -10,7 +10,10 @@ $ENV{GIT_CONFIG_SYSTEM} = '/dev/null';
 
 sub new_repo {
   my $tmp  = Path::Tiny->tempdir;
-  my $repo = Git::Native->init("$tmp");
+  # Pin the default branch to 'main' so tests don't depend on libgit2's
+  # compiled-in default: Debian patches it to 'main', upstream/Homebrew
+  # still defaults to 'master'.
+  my $repo = Git::Native->init( "$tmp", initial_branch => 'main' );
   return ( $repo, $tmp );
 }
 

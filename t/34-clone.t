@@ -26,17 +26,14 @@ $src->reference_create( 'refs/heads/main', $commit, force => 1 );
 
 # Make a bare repo with the ref so we have something clonable (clone wants
 # HEAD to resolve; a bare push from src sets it up cleanly).
-my $bare = Git::Native->init( "$tmp_bare", bare => 1 );
+my $bare = Git::Native->init( "$tmp_bare", bare => 1, initial_branch => 'main' );
 my $remote = $src->remote_create( 'origin', "file://$tmp_bare" );
 $remote->push( refspecs => ['+refs/heads/main:refs/heads/main'] );
 
-# Set HEAD on the bare repo so clone has a default branch.
-{
-  my $head = $bare->reference_create('refs/heads/main', $commit, force => 1);
-  # HEAD itself is a symbolic ref; libgit2 init created it pointing at
-  # refs/heads/main already, just need the ref to exist (it does after the
-  # branch_create above).
-}
+# Pin the bare repo's HEAD at main so clone has a deterministic default
+# branch regardless of libgit2's compiled-in default (Debian patches it to
+# 'main', upstream/Homebrew still defaults to 'master').
+$bare->set_head('refs/heads/main');
 
 # Clone into dst.
 my $cloned = Git::Native->clone( "file://$tmp_bare", "$tmp_dst" );
