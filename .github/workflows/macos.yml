@@ -10,10 +10,9 @@ jobs:
   macos:
     runs-on: macos-14
     env:
-      # Job-level so they reach the composite action's dzil test step.
-      GIT_CONFIG_GLOBAL: /dev/null
-      GIT_CONFIG_SYSTEM: /dev/null
-      # Help FFI::Platypus find Homebrew libs (Apple Silicon path).
+      # gitconfig isolation is handled inside t/lib/TestRepo.pm; setting
+      # GIT_CONFIG_GLOBAL=/dev/null here would break checkout's safe.directory
+      # write (see linux.yml). Help FFI::Platypus find Homebrew libs instead.
       DYLD_FALLBACK_LIBRARY_PATH: /opt/homebrew/lib:/usr/local/lib
       TEST_GIT_NATIVE_HTTPS_URL: https://github.com/getty/p5-www-chain.git
     steps:

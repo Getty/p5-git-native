@@ -21,9 +21,12 @@ jobs:
     container:
       image: perl:${{ matrix.perl-version }}-${{ matrix.codename }}
     env:
-      # Job-level so they reach the composite action's dzil test step.
-      GIT_CONFIG_GLOBAL: /dev/null
-      GIT_CONFIG_SYSTEM: /dev/null
+      # Test-time gitconfig isolation is handled inside t/lib/TestRepo.pm
+      # (sets GIT_CONFIG_GLOBAL/SYSTEM per process). Do NOT set those here:
+      # at job level they also hit actions/checkout and the Fix safe.directory
+      # step, sending their --global writes to /dev/null and breaking the
+      # dubious-ownership guard inside the container.
+      #
       # Hits a real public GitHub repo over HTTPS — exercises the network +
       # TLS + ref-listing path end-to-end. No token needed.
       TEST_GIT_NATIVE_HTTPS_URL: https://github.com/getty/p5-www-chain.git
