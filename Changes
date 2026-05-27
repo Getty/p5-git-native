@@ -1,5 +1,7 @@
 Revision history for Git-Native
 
+{{$NEXT}}
+
 0.003     2026-05-27 18:55:00Z
   - New Git::Native::Config class - get_string / set_string / snapshot
   - Repository: config (live), config_snapshot (read-only), and a
