@@ -1,5 +1,7 @@
 Revision history for Git-Native
 
+{{$NEXT}}
+
 0.002     2026-05-27 18:02:46Z
   - Initial release
   - Moo-based high-level wrapper around Git::Libgit2 / libgit2 — no
