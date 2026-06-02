@@ -14,7 +14,8 @@ consumers see. Name contrasts deliberately with `Git::Wrapper` and
 Git::Native               ->open / ->init($path, bare =>?, initial_branch =>?) / ->clone($url, $path)
 
 Git::Native::Repository   workdir, gitdir, is_bare
-                          ->config, ->reference($name), ->reference_names(glob =>)
+                          ->config / ->config_snapshot / ->config_string($k) / ->config_bool($k)
+                          ->reference($name), ->reference_names(glob =>)
                           ->reference_create / ->reference_delete / ->reference_exists
                           ->reference_symbolic_create($name, $target, force =>?, message =>?)
                           ->head -> Reference|undef / ->head_unborn / ->head_detached
@@ -64,6 +65,9 @@ Git::Native::Tag          ->name / ->message / ->target_id   (annotated only)
 Git::Native::Signature    name, email, when
 Git::Native::Oid          stringify hex, ->raw (20B), ->short(7)
 Git::Native::Error        isa Throwable::Error; code, klass, message
+                          is_not_found / is_exists / is_auth / is_certificate /
+                          is_conflict / is_not_fast_forward / is_unborn_branch / is_invalid_spec
+                          check_rc (exported) wraps Git::Libgit2::Error
 ```
 
 ## Memory Ownership
@@ -81,8 +85,13 @@ NOT from `Git::Libgit2`). On negative rc it pulls libgit2's thread-local
 error via `Git::Libgit2::Error->last` and re-throws it as a Throwable
 `Git::Native::Error` (`code` / `klass` / `message`). No low-level
 `Git::Libgit2::Error` leaks above this layer - `t/46-error-paths.t` asserts
-exactly that on real lookups and a symbolic-ref mutator. (`klass` is whatever
-the lower layer decodes, currently 0.)
+exactly that on real lookups and a symbolic-ref mutator.
+
+For branching on the failure kind, `code` is the discriminator: use the
+curated `is_*` predicates (`is_not_found`, `is_auth`, `is_certificate`, ...)
+or compare `->code` against the `GIT_E*` constants exported by `Git::Libgit2`.
+`klass` (the `git_error_t` category) is decoded by `Git::Libgit2 0.005`
+and is a secondary signal, not the primary discriminator.
 
 ## Phase 4 - Network + Auth
 

@@ -45,6 +45,14 @@ my $sym_err = dies { $head->set_target($c1) };
 isa_ok $sym_err, ['Git::Native::Error'],
   'set_target on a symbolic ref throws Git::Native::Error';
 
+# Predicates classify the error kind off the libgit2 code, and klass is now
+# a decoded category (no longer hardwired to 0).
+my $nf = dies { $repo->reference('refs/heads/nope') };
+ok $nf->is_not_found,     'is_not_found true for a missing ref';
+ok !$nf->is_auth,         'is_auth false for a not-found error';
+ok !$nf->is_certificate,  'is_certificate false for a not-found error';
+ok $nf->klass != 0,       'klass is a decoded non-zero category';
+
 # clone(bare=>1) is a deliberate, friendly croak BEFORE libgit2 is touched
 # (the offset of the `bare` field isn't stable) - a plain die, not a typed
 # libgit2 error. Pin that it stays a clear message.

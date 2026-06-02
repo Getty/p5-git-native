@@ -16,13 +16,22 @@ Revision history for Git-Native
   - Error: libgit2 failures now surface as a Throwable Git::Native::Error
     (with code/klass/message) as documented, instead of leaking the
     low-level Git::Libgit2::Error. check_rc is re-homed in Git::Native::Error
-    and used by every wrapper.
+    and used by every wrapper. klass now carries a real decoded category
+    (Git::Libgit2 0.005), no longer always 0.
+  - Error: predicates over the libgit2 code - is_not_found, is_exists,
+    is_auth, is_certificate, is_conflict, is_not_fast_forward,
+    is_unborn_branch, is_invalid_spec. The long tail is reachable via
+    ->code and the GIT_E* constants now exported by Git::Libgit2.
   - Repository: new object($oid) - look up an object of unknown kind and
     return the matching typed wrapper (Blob / Tree / Commit / Tag).
   - Config: new get_bool($key) - read a git-style boolean via libgit2's
     git_config_get_bool (true/yes/on/1, false/no/off/0, integers by
     non-zero); undef when unset, Git::Native::Error on a non-boolean value.
-    Requires Git::Libgit2 0.005.
+    Repository->config_bool($key) is the snapshot-backed convenience, like
+    config_string. Requires Git::Libgit2 0.005.
+  - Config: get_string no longer swallows every error as undef - only
+    GIT_ENOTFOUND maps to undef now, other failures throw (matching
+    get_bool).
 
 0.003     2026-05-27 18:55:00Z
   - New Git::Native::Config class - get_string / set_string / snapshot

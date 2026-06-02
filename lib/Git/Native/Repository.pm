@@ -166,9 +166,10 @@ sub commit {
 }
 
 # object($oid): look up an object of unknown kind and return the matching
-# typed wrapper (Blob / Tree / Commit / Tag). libgit2's git_*_free are all
-# git_object_free under the hood, so wrapping the git_object* handle in a
-# typed wrapper whose DEMOLISH frees it is safe.
+# typed wrapper (Blob / Tree / Commit / Tag). git_blob_free/git_commit_free/
+# git_tree_free/git_tag_free are all thin wrappers that call git_object_free
+# (stable across libgit2 1.x), so it's safe to hold the git_object* handle in
+# a typed wrapper whose DEMOLISH calls the type-specific free.
 my %_OBJECT_WRAPPER = (
   GIT_OBJECT_BLOB()   => 'Git::Native::Blob',
   GIT_OBJECT_TREE()   => 'Git::Native::Tree',
@@ -303,6 +304,13 @@ sub config_snapshot {
 sub config_string {
   my ( $self, $key ) = @_;
   return $self->config_snapshot->get_string($key);
+}
+
+# Convenience: read one key as a git-style boolean off a fresh snapshot.
+# undef when unset; Git::Native::Error on a non-boolean value.
+sub config_bool {
+  my ( $self, $key ) = @_;
+  return $self->config_snapshot->get_bool($key);
 }
 
 # ---------- revwalk ----------

@@ -47,4 +47,14 @@ is( $b->get_bool('does.not.exist'), undef, 'missing key -> undef' );
 my $bad = dies { $b->get_bool('bool.bad') };
 isa_ok( $bad, ['Git::Native::Error'], 'non-boolean value throws Git::Native::Error' );
 
+# Repository->config_bool convenience mirrors config_string: reads off a
+# fresh snapshot, undef when unset.
+is( $repo->config_bool('truthy.true'), 1,     'config_bool reads a true value' );
+is( $repo->config_bool('falsy.off'),   0,     'config_bool reads a false value' );
+is( $repo->config_bool('does.not.exist'), undef, 'config_bool undef when unset' );
+
+# get_string now throws on a real error too (only ENOTFOUND -> undef). The
+# unset case stays undef, as the existing assertions above already pin.
+is( $repo->config_string('does.not.exist'), undef, 'config_string still undef when unset' );
+
 done_testing;
