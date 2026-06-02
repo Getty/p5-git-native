@@ -29,21 +29,22 @@ is( $snap->get_string('user.name'), 'Native Tester', 'snapshot get_string' );
 # (get_string/get_bool are only reliable on a snapshot).
 $cfg->set_string( "truthy.$_", $_ ) for qw( true yes on 1 17 );
 $cfg->set_string( "falsy.$_",  $_ ) for qw( false no off 0 );
-$cfg->set_string( 'bool.empty', '' );        # present but empty -> true
+$cfg->set_string( 'bool.empty', '' );        # empty string value -> false (libgit2)
 $cfg->set_string( 'bool.mixed', 'TrUe' );    # case-insensitive
-$cfg->set_string( 'bool.bad',   'banana' );  # not a boolean -> croaks
+$cfg->set_string( 'bool.bad',   'banana' );  # not a boolean -> throws
 
 my $b = $repo->config_snapshot;
 is( $b->get_bool("truthy.$_"), 1, "get_bool '$_' is true" )  for qw( true yes on 1 17 );
 is( $b->get_bool("falsy.$_"),  0, "get_bool '$_' is false" ) for qw( false no off 0 );
-is( $b->get_bool('bool.empty'), 1, 'present-but-empty value is true' );
+is( $b->get_bool('bool.empty'), 0, 'empty string value is false' );
 is( $b->get_bool('bool.mixed'), 1, 'get_bool is case-insensitive' );
 
 # Unset key -> undef, mirroring get_string (not an exception).
 is( $b->get_bool('does.not.exist'), undef, 'missing key -> undef' );
 
-# A non-boolean, non-integer value croaks like git's own --bool.
-like( dies { $b->get_bool('bool.bad') }, qr/not a valid boolean/,
-  'non-boolean value croaks' );
+# A present-but-non-boolean value makes libgit2 error, surfaced as a
+# Git::Native::Error (not a silent undef).
+my $bad = dies { $b->get_bool('bool.bad') };
+isa_ok( $bad, ['Git::Native::Error'], 'non-boolean value throws Git::Native::Error' );
 
 done_testing;

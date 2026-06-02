@@ -19,9 +19,10 @@ Revision history for Git-Native
     and used by every wrapper.
   - Repository: new object($oid) - look up an object of unknown kind and
     return the matching typed wrapper (Blob / Tree / Commit / Tag).
-  - Config: new get_bool($key) - read a git-style boolean (true/yes/on/1,
-    false/no/off/0, present-but-empty = true, integers by non-zero),
-    undef when unset.
+  - Config: new get_bool($key) - read a git-style boolean via libgit2's
+    git_config_get_bool (true/yes/on/1, false/no/off/0, integers by
+    non-zero); undef when unset, Git::Native::Error on a non-boolean value.
+    Requires Git::Libgit2 0.005.
 
 0.003     2026-05-27 18:55:00Z
   - New Git::Native::Config class - get_string / set_string / snapshot
