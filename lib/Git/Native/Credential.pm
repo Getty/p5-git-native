@@ -3,8 +3,9 @@
 package Git::Native::Credential;
 use Moo;
 use Carp ();
-use Git::Libgit2 qw( check_rc init_lib );
+use Git::Libgit2 qw( init_lib );
 use Git::Libgit2::FFI ();
+use Git::Native::Error qw( check_rc );
 
 # Ensure libgit2 FFI is initialised before first use of this module.
 init_lib();

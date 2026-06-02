@@ -3,9 +3,10 @@
 package Git::Native::Repository;
 use Moo;
 use Carp ();
-use Git::Libgit2 qw( check_rc GIT_OBJECT_BLOB GIT_OBJECT_TREE GIT_OBJECT_COMMIT );
+use Git::Libgit2 qw( GIT_OBJECT_ANY GIT_OBJECT_BLOB GIT_OBJECT_TREE GIT_OBJECT_COMMIT GIT_OBJECT_TAG );
 use Git::Libgit2::FFI ();
 use FFI::Platypus::Buffer qw( scalar_to_buffer );
+use Git::Native::Error qw( check_rc );
 use Git::Native::Reference ();
 use Git::Native::Blob ();
 use Git::Native::Tree ();
@@ -164,6 +165,32 @@ sub commit {
   return Git::Native::Commit->new( _handle => $c, _owner => $self );
 }
 
+# object($oid): look up an object of unknown kind and return the matching
+# typed wrapper (Blob / Tree / Commit / Tag). libgit2's git_*_free are all
+# git_object_free under the hood, so wrapping the git_object* handle in a
+# typed wrapper whose DEMOLISH frees it is safe.
+my %_OBJECT_WRAPPER = (
+  GIT_OBJECT_BLOB()   => 'Git::Native::Blob',
+  GIT_OBJECT_TREE()   => 'Git::Native::Tree',
+  GIT_OBJECT_COMMIT() => 'Git::Native::Commit',
+  GIT_OBJECT_TAG()    => 'Git::Native::Tag',
+);
+
+sub object {
+  my ( $self, $oid ) = @_;
+  $oid = Git::Native::Oid->from_hex($oid) if !ref $oid;
+  check_rc Git::Libgit2::FFI::git_object_lookup(
+    \my $obj, $self->_handle, $oid->ptr, GIT_OBJECT_ANY,
+  );
+  my $type  = Git::Libgit2::FFI::git_object_type($obj);
+  my $class = $_OBJECT_WRAPPER{$type};
+  unless ($class) {
+    Git::Libgit2::FFI::git_object_free($obj);
+    Carp::croak "object: unexpected git object type $type for $oid";
+  }
+  return $class->new( _handle => $obj, _owner => $self );
+}
+
 # commit_create(%args): tree => Oid|hex, parents => [Oid|hex, ...],
 # message => str, update_ref => 'HEAD', author => Signature, committer => Signature
 sub commit_create {
@@ -194,7 +221,8 @@ sub commit_create {
 
   # Build a parents-array pointer if non-empty.
   # FFI::Platypus 2: we declared parents as 'opaque' — accepting NULL or a pointer.
-  # To pass an array we need a temporary buffer of pointers. For MVP, support 0..1 parent.
+  # The non-empty branch packs ALL parent handles into a pointer array, so
+  # any parent count works (0 roots, 1 normal, 2+ merge commits — see t/48).
   if ( @parent_handles == 0 ) {
     check_rc Git::Libgit2::FFI::git_commit_create(
       $oid_p, $self->_handle, $args{update_ref},

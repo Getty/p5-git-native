@@ -2,8 +2,8 @@
 
 package Git::Native::Signature;
 use Moo;
-use Git::Libgit2 qw( check_rc );
 use Git::Libgit2::FFI ();
+use Git::Native::Error qw( check_rc );
 
 has name  => ( is => 'ro', required => 1 );
 has email => ( is => 'ro', required => 1 );

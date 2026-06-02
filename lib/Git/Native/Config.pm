@@ -2,8 +2,9 @@
 
 package Git::Native::Config;
 use Moo;
-use Git::Libgit2 qw( check_rc );
+use Carp ();
 use Git::Libgit2::FFI ();
+use Git::Native::Error qw( check_rc );
 
 has _handle => ( is => 'ro', required => 1 );
 has _owner  => ( is => 'ro' );   # Repository (when repo-derived) - keeps it alive
@@ -16,6 +17,30 @@ sub get_string {
   my $rc = Git::Libgit2::FFI::git_config_get_string( \my $out, $self->_handle, $key );
   return undef if $rc < 0;   # GIT_ENOTFOUND etc. - treat as "unset"
   return $out;
+}
+
+# get_bool($key): 1 / 0 for a git-style boolean, or undef when the key is
+# unset. libgit2's git_config_get_bool isn't bound in Git::Libgit2, so we
+# parse the string value here using git's own bool rules:
+#   true   = "true" / "yes" / "on" / a present-but-empty value
+#   false  = "false" / "no" / "off"
+#   else   = parse as an integer; non-zero is true, zero is false
+# (all case-insensitive). A non-bool, non-integer value croaks, matching
+# how git itself rejects e.g. `--bool` on "banana".
+sub get_bool {
+  my ( $self, $key ) = @_;
+  my $val = $self->get_string($key);
+  return undef unless defined $val;
+  $val =~ s/\A\s+//;
+  $val =~ s/\s+\z//;
+  return 1 if $val eq '';
+  my $lc = lc $val;
+  return 1 if $lc eq 'true'  || $lc eq 'yes' || $lc eq 'on';
+  return 0 if $lc eq 'false' || $lc eq 'no'  || $lc eq 'off';
+  if ( $val =~ /\A[+-]?[0-9]+\z/ ) {
+    return $val != 0 ? 1 : 0;
+  }
+  Carp::croak "get_bool: '$key' value '$val' is not a valid boolean";
 }
 
 # set_string($key, $value): only valid on a live (non-snapshot) config.

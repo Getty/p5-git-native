@@ -9,6 +9,19 @@ Revision history for Git-Native
     entries) by SHA256/SHA1 fingerprint, mirroring the git CLI. Set
     GIT_NATIVE_SSH_INSECURE=1 to accept any hostkey. HTTPS remotes keep
     libgit2's own TLS validation.
+  - Oid: fix the `eq` overload so an Oid compares equal to its hex string
+    (e.g. `$ref->target eq $known_sha`). It previously compared the 20 raw
+    bytes against the right-hand side verbatim, so Oid-vs-hex-string never
+    matched. Oid-vs-Oid is unaffected.
+  - Error: libgit2 failures now surface as a Throwable Git::Native::Error
+    (with code/klass/message) as documented, instead of leaking the
+    low-level Git::Libgit2::Error. check_rc is re-homed in Git::Native::Error
+    and used by every wrapper.
+  - Repository: new object($oid) - look up an object of unknown kind and
+    return the matching typed wrapper (Blob / Tree / Commit / Tag).
+  - Config: new get_bool($key) - read a git-style boolean (true/yes/on/1,
+    false/no/off/0, present-but-empty = true, integers by non-zero),
+    undef when unset.
 
 0.003     2026-05-27 18:55:00Z
   - New Git::Native::Config class - get_string / set_string / snapshot

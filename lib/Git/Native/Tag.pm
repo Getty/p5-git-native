@@ -2,8 +2,8 @@
 
 package Git::Native::Tag;
 use Moo;
-use Git::Libgit2 qw( check_rc );
 use Git::Libgit2::FFI ();
+use Git::Native::Error qw( check_rc );
 use Git::Native::Oid ();
 
 has _handle => ( is => 'ro', required => 1 );  # git_tag*

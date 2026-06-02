@@ -75,10 +75,14 @@ outlives the child - no use-after-free.
 
 ## Error Handling
 
-Every FFI call with an `int` return code goes through `_check($rc)` in
-`Git::Libgit2`. On negative rc, the C error string is fetched via
-`Git::Libgit2::Error->last`, then re-thrown as a `Git::Native::Error`
-(Throwable). No raw libgit2 codes leak above this layer.
+Every FFI call with an `int` return code goes through `check_rc($rc)`,
+which lives in **`Git::Native::Error`** (every wrapper imports it from there,
+NOT from `Git::Libgit2`). On negative rc it pulls libgit2's thread-local
+error via `Git::Libgit2::Error->last` and re-throws it as a Throwable
+`Git::Native::Error` (`code` / `klass` / `message`). No low-level
+`Git::Libgit2::Error` leaks above this layer - `t/46-error-paths.t` asserts
+exactly that on real lookups and a symbolic-ref mutator. (`klass` is whatever
+the lower layer decodes, currently 0.)
 
 ## Phase 4 - Network + Auth
 
@@ -133,6 +137,23 @@ both skip unless `TEST_GIT_NATIVE_SSH_URL` / `TEST_GIT_NATIVE_HTTPS_URL`
 is set. CI sets the HTTPS URL to a public repo so every push exercises
 the real TLS + ref-listing path. SSH and token-auth need operator-set
 env vars locally.
+
+Pure-logic helpers that reimplement git semantics in Perl get their own
+network-free unit tests, so a regression shows up without a live remote:
+`t/43-known-hosts.t` (known_hosts host-field matching), `t/44-push-refspec-expand.t`
+(`Remote::_expand_push_refspecs` — libgit2 doesn't expand push wildcards,
+we do). `t/45-oid.t` pins the `Git::Native::Oid` value contract (hex<->raw,
+`short`, and the `""`/`eq` overloads — `eq` must match an Oid's hex string).
+
+`t/46-error-paths.t` is the contract test for Error Handling above: it
+catches REAL libgit2 failures (missing ref/oid lookups, set_target on a
+symbolic ref) and asserts they arrive as a Throwable `Git::Native::Error`
+with a negative code, never a leaked `Git::Libgit2::Error`. `t/47-object.t`
+covers `Repository->object` dispatch to each typed wrapper;
+`t/48-merge-commit.t` builds a real 2-parent merge (the `commit_create`
+N-parent path). Status (`t/33`), revwalk (`t/30`), branch `is_head` (`t/31`),
+detached HEAD (`t/37`) and fetch `--prune` (`t/20`) were widened from a
+single happy path toward error and edge cases.
 
 ## Phase 5 - General-purpose Surface
 

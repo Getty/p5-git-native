@@ -57,7 +57,10 @@ sub ptr {
 
 use overload
   '""'     => sub { $_[0]->hex },
-  'eq'     => sub { $_[0]->raw eq (ref $_[1] ? $_[1]->raw : $_[1]) },
+  # Compare on the hex form so an Oid is equal both to another Oid and to
+  # its hex string (the common `$ref->target eq $known_sha` pattern). raw-vs-
+  # raw would also work for Oid pairs, but raw-vs-hex-string never matches.
+  'eq'     => sub { $_[0]->hex eq (ref $_[1] ? $_[1]->hex : $_[1]) },
   fallback => 1;
 
 1;

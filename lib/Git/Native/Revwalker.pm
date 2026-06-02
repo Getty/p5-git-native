@@ -3,8 +3,8 @@
 package Git::Native::Revwalker;
 use Moo;
 use Carp ();
-use Git::Libgit2 qw( check_rc );
 use Git::Libgit2::FFI ();
+use Git::Native::Error qw( check_rc );
 use FFI::Platypus::Buffer qw( scalar_to_buffer );
 use Git::Native::Oid ();
 

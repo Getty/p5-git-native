@@ -4,8 +4,9 @@ package Git::Native;
 our $VERSION = '0.004';
 use Moo;
 use Carp ();
-use Git::Libgit2 qw( init_lib check_rc GIT_REPOSITORY_INIT_BARE );
+use Git::Libgit2 qw( init_lib GIT_REPOSITORY_INIT_BARE );
 use Git::Libgit2::FFI ();
+use Git::Native::Error qw( check_rc );
 use Git::Native::Repository ();
 use FFI::Platypus::Buffer qw( scalar_to_buffer );
 
