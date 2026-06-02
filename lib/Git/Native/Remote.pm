@@ -8,6 +8,8 @@ use Git::Libgit2::FFI ();
 use FFI::Platypus::Buffer qw( scalar_to_buffer );
 use FFI::Platypus::Memory qw( memcpy malloc free );
 use Git::Native::Credential ();
+use MIME::Base64 qw( encode_base64 decode_base64 );
+use Digest::SHA qw( sha1 sha256 hmac_sha1 );
 
 # libgit2 1.5.x struct layouts (probed). 1.9.x add fields at the end of
 # git_remote_callbacks but the offsets up through `payload` are stable.
@@ -21,8 +23,20 @@ use constant {
   FETCH_OPTIONS_SIZE  => 384,   # actual 1.5: 208
   PUSH_OPTIONS_SIZE   => 384,   # actual 1.5: 192
 
-  CALLBACKS_CRED_OFFSET    => 24,   # credentials cb pointer
-  CALLBACKS_PAYLOAD_OFFSET => 104,  # payload void*
+  CALLBACKS_CRED_OFFSET      => 24,   # credentials cb pointer
+  CALLBACKS_CERTCHECK_OFFSET => 32,   # certificate_check cb pointer (cred + 8)
+  CALLBACKS_PAYLOAD_OFFSET   => 104,  # payload void*
+
+  # git_cert_t (cert.cert_type @ offset 0)
+  GIT_CERT_X509            => 1,
+  GIT_CERT_HOSTKEY_LIBSSH2 => 2,
+
+  # git_cert_hostkey field offsets + git_cert_ssh_t bits (1.5.x layout)
+  CERT_HOSTKEY_TYPE_OFFSET   => 4,    # git_cert_ssh_t bitmask (which hashes set)
+  CERT_HOSTKEY_SHA1_OFFSET   => 24,   # hash_sha1[20]
+  CERT_HOSTKEY_SHA256_OFFSET => 44,   # hash_sha256[32]
+  GIT_CERT_SSH_SHA1   => 2,
+  GIT_CERT_SSH_SHA256 => 4,
 
   FETCH_OPTS_CALLBACKS_OFFSET => 8,    # callbacks struct (embedded)
   FETCH_OPTS_PRUNE_OFFSET     => 128,  # int (8 + 120)
@@ -143,6 +157,7 @@ sub _connect {
     memcpy( $cb_ptr + CALLBACKS_CRED_OFFSET, $pkt_p, 8 );
     CORE::push @keep, \$pkt;
   }
+  _install_certcheck( $cb_ptr, 0, \@keep );
   check_rc Git::Libgit2::FFI::git_remote_connect(
     $self->_handle, $direction, $cb_ptr, 0, 0,
   );
@@ -279,6 +294,8 @@ sub _build_fetch_options {
     CORE::push @keep, \$cb_buf;
   }
 
+  _install_certcheck( $opts_ptr, FETCH_OPTS_CALLBACKS_OFFSET, \@keep );
+
   if ( defined $prune ) {
     my $val = $prune ? 1 : 2;   # 1 = PRUNE, 2 = NO_PRUNE
     my $pb  = pack 'l', $val;
@@ -314,6 +331,8 @@ sub _build_push_options {
             $cb_buf_ptr, 8 );
     CORE::push @keep, \$cb_buf;
   }
+
+  _install_certcheck( $opts_ptr, PUSH_OPTS_CALLBACKS_OFFSET, \@keep );
 
   return ( $opts_ptr, \@keep );
 }
@@ -357,6 +376,158 @@ sub _make_credential_thunk {
   # `sticky` would survive process-lifetime; we only need until the C
   # call returns, so just hand the closure to the caller's keepalive.
   return ( $closure, [ \$closure ] );
+}
+
+# ---------- host-key verification (certificate_check callback) ----------
+
+# Write a certificate_check closure into a callbacks struct. $cb_base is the
+# offset of the embedded git_remote_callbacks within $struct_ptr (0 for a
+# bare callbacks struct, 8 for fetch/push options). Pushes keepalives.
+#
+# libgit2 1.5.x + libssh2 has NO built-in known_hosts checking (that landed in
+# 1.7). Without a certificate_check callback the ssh transport rejects every
+# host with GIT_ECERTIFICATE (-17) "invalid or unknown remote ssh hostkey".
+# So we always install one and verify the hostkey against ~/.ssh/known_hosts
+# ourselves, mirroring what the `git` CLI does via OpenSSH.
+sub _install_certcheck {
+  my ( $struct_ptr, $cb_base, $keep ) = @_;
+  my ( $thunk, $thunk_keep ) = _make_certcheck_thunk();
+  CORE::push @$keep, @$thunk_keep;
+  my $ptr_val = Git::Libgit2::FFI::ffi->cast(
+    'git_transport_certificate_check_cb' => 'opaque', $thunk,
+  );
+  my $buf = pack 'J', $ptr_val;
+  my ($bp) = scalar_to_buffer($buf);
+  memcpy( $struct_ptr + $cb_base + CALLBACKS_CERTCHECK_OFFSET, $bp, 8 );
+  CORE::push @$keep, \$buf;
+  return;
+}
+
+# Build the certificate_check closure. Returns ($closure, $keepalive).
+#
+#   int cb(git_cert *cert, int valid, const char *host, void *payload)
+#
+# Return 0 to accept, <0 to reject (libgit2 aborts the connection with that
+# code). For TLS (git_cert_x509) we honour libgit2's own `valid` flag so HTTPS
+# remotes keep their normal CA validation. For SSH (git_cert_hostkey) we verify
+# against known_hosts unless GIT_NATIVE_SSH_INSECURE is set (accept-all).
+sub _make_certcheck_thunk {
+  my $ffi = Git::Libgit2::FFI::ffi();
+  my $closure = $ffi->closure(sub {
+    my ( $cert_ptr, $valid, $host, $payload ) = @_;
+    my $ok = eval {
+      my $cert_type = unpack 'l', _peek_bytes( $cert_ptr, 4 );
+      return $valid ? 1 : 0 if $cert_type == GIT_CERT_X509;
+      if ( $cert_type == GIT_CERT_HOSTKEY_LIBSSH2 ) {
+        return 1 if $ENV{GIT_NATIVE_SSH_INSECURE};
+        return _verify_known_host( $cert_ptr, $host );
+      }
+      # Unknown cert kind — fall back to libgit2's own verdict.
+      return $valid ? 1 : 0;
+    };
+    if ($@) {
+      warn "Git::Native certificate check died: $@";
+      return -1;
+    }
+    return $ok ? 0 : -1;
+  });
+  return ( $closure, [ \$closure ] );
+}
+
+# Verify an ssh hostkey against known_hosts using the SHA256 (preferred) or
+# SHA1 fingerprint libssh2 computed for the negotiated key. Returns 1 on a
+# match, 0 otherwise (with an actionable warning).
+sub _verify_known_host {
+  my ( $cert_ptr, $host ) = @_;
+  my $bits = unpack 'l', _peek_bytes( $cert_ptr + CERT_HOSTKEY_TYPE_OFFSET, 4 );
+
+  my ( $digest, $want );
+  if ( $bits & GIT_CERT_SSH_SHA256 ) {
+    $digest = 'sha256';
+    $want   = _peek_bytes( $cert_ptr + CERT_HOSTKEY_SHA256_OFFSET, 32 );
+  }
+  elsif ( $bits & GIT_CERT_SSH_SHA1 ) {
+    $digest = 'sha1';
+    $want   = _peek_bytes( $cert_ptr + CERT_HOSTKEY_SHA1_OFFSET, 20 );
+  }
+  else {
+    warn "Git::Native: ssh hostkey for '$host' offers no SHA1/SHA256 "
+       . "fingerprint to verify; rejecting\n";
+    return 0;
+  }
+
+  my ( $matched, $host_seen ) = _known_hosts_match( $host, $digest, $want );
+  return 1 if $matched;
+
+  if ($host_seen) {
+    warn "Git::Native: ssh hostkey for '$host' did NOT match the "
+       . "$host_seen known_hosts entr" . ( $host_seen == 1 ? 'y' : 'ies' )
+       . " for it — server offered a key type you have not cached, or the "
+       . "key changed. Run `ssh-keyscan $host >> ~/.ssh/known_hosts`, or set "
+       . "GIT_NATIVE_SSH_INSECURE=1 to bypass.\n";
+  }
+  else {
+    warn "Git::Native: ssh host '$host' is not in known_hosts. Run "
+       . "`ssh-keyscan $host >> ~/.ssh/known_hosts`, or set "
+       . "GIT_NATIVE_SSH_INSECURE=1 to bypass.\n";
+  }
+  return 0;
+}
+
+# Scan the known_hosts files for $host and compare the cached key's digest to
+# $want. Returns (matched, host_line_count): host_line_count distinguishes
+# "host unknown" from "host known but key mismatch".
+sub _known_hosts_match {
+  my ( $host, $digest, $want ) = @_;
+  my $host_seen = 0;
+  for my $file (
+    "$ENV{HOME}/.ssh/known_hosts",
+    "$ENV{HOME}/.ssh/known_hosts2",
+    '/etc/ssh/ssh_known_hosts',
+  ) {
+    next unless -r $file;
+    open my $fh, '<', $file or next;
+    while ( my $line = <$fh> ) {
+      $line =~ s/\A\s+//;
+      next if $line eq '' || $line =~ /\A[#\r\n]/;
+      my @parts = split ' ', $line;
+      my $marker = ( @parts && $parts[0] =~ /\A\@/ ) ? shift @parts : '';
+      next if @parts < 3;
+      next if $marker eq '@cert-authority' || $marker eq '@revoked';
+      my ( $hosts, undef, $key64 ) = @parts;
+      next unless _host_in_field( $host, $hosts );
+      $host_seen++;
+      my $blob = decode_base64($key64);
+      next unless length $blob;
+      my $got = $digest eq 'sha256' ? sha256($blob) : sha1($blob);
+      return ( 1, $host_seen ) if $got eq $want;
+    }
+    close $fh;
+  }
+  return ( 0, $host_seen );
+}
+
+# Does $host match a known_hosts host field? Handles hashed (|1|salt|hash via
+# HMAC-SHA1), plain comma lists, [host]:port, and * / ? wildcards.
+sub _host_in_field {
+  my ( $host, $field ) = @_;
+  if ( $field =~ /\A\|1\|([^|]+)\|(.+)\z/ ) {
+    my ( $salt64, $hash64 ) = ( $1, $2 );
+    my $got = encode_base64( hmac_sha1( $host, decode_base64($salt64) ), '' );
+    return $got eq $hash64;
+  }
+  for my $pat ( split /,/, $field ) {
+    next if $pat eq '';
+    $pat = $1 if $pat =~ /\A\[([^\]]+)\](?::\d+)?\z/;
+    return 1 if lc $pat eq lc $host;
+    if ( $pat =~ /[*?]/ ) {
+      my $re = quotemeta $pat;
+      $re =~ s/\\\*/.*/g;
+      $re =~ s/\\\?/./g;
+      return 1 if $host =~ /\A$re\z/i;
+    }
+  }
+  return 0;
 }
 
 sub DEMOLISH {

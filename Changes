@@ -1,6 +1,14 @@
 Revision history for Git-Native
 
 {{$NEXT}}
+  - Remote: install a certificate_check callback so SSH remotes work on
+    libgit2 < 1.7 (which has no built-in known_hosts checking). Without it
+    every git+ssh fetch/push/list_refs failed with GIT_ECERTIFICATE (-17)
+    "invalid or unknown remote ssh hostkey". The hostkey is verified
+    against ~/.ssh/known_hosts (hashed, plain, [host]:port and wildcard
+    entries) by SHA256/SHA1 fingerprint, mirroring the git CLI. Set
+    GIT_NATIVE_SSH_INSECURE=1 to accept any hostkey. HTTPS remotes keep
+    libgit2's own TLS validation.
 
 0.003     2026-05-27 18:55:00Z
   - New Git::Native::Config class - get_string / set_string / snapshot
