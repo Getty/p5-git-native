@@ -1,6 +1,6 @@
 Revision history for Git-Native
 
-{{$NEXT}}
+0.004     2026-08-09 20:34:42Z
   - Repository: add compare-and-swap direct reference updates.
     reference_create(..., expected_old => $oid) uses
     git_reference_create_matching, and reference_set_target($name, $new_oid,
