@@ -183,3 +183,20 @@ Past karr's MVP. Quirks:
   `git_diff_file` layout, which grew an extra field in 1.7.
 - **`tag_names()` walks a `git_strarray` via `unpack`** (16 bytes:
   pointer + count). Stable layout since 1.0.
+
+## Delegation
+
+Delegate behavior-relevant code to the right agent instead of touching it yourself —
+principle and lane are in `.claude/rules/git-native-rules.md`.
+
+| Task | Agent |
+|---|---|
+| Implement / refactor / debug general local-repo wrappers | `git-native-worker` (default) |
+| Remote / Credential / clone / fetch / push / FFI struct margins / live network | `git-native-network-worker` |
+| clone / status / tag / tag_names / refname / head / branch (Phase 5 surface) | `git-native-phase5-worker` |
+| Write / extend tests | `git-native-test-writer` |
+| Pre-release audit (CPAN) | `git-native-release-checker` |
+
+The agents carry their skills via `briefing.skills` (see `.claude/agents/`); the main
+agent delegates rather than loading them. Skill sources live under `.claude/skills/`,
+shared skills are hardlinked from `~/dev/perl/shared-skills/` and `~/dev/shared-skills/`.
