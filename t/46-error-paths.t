@@ -2,6 +2,8 @@ use Test2::V0;
 use lib 't/lib';
 use TestRepo;
 use Git::Native;
+use Git::Libgit2 qw( GIT_EMODIFIED );
+use Git::Native::Error;
 
 # The contract from the docs: every libgit2 failure surfaces as a Throwable
 # Git::Native::Error with a negative `code` and a message - no low-level
@@ -52,6 +54,13 @@ ok $nf->is_not_found,     'is_not_found true for a missing ref';
 ok !$nf->is_auth,         'is_auth false for a not-found error';
 ok !$nf->is_certificate,  'is_certificate false for a not-found error';
 ok $nf->klass != 0,       'klass is a decoded non-zero category';
+
+my $modified = Git::Native::Error->new(
+  code    => GIT_EMODIFIED,
+  message => 'stale expected OID',
+);
+ok $modified->is_not_matched, 'is_not_matched recognizes GIT_EMODIFIED';
+ok !$nf->is_not_matched, 'is_not_matched rejects an unrelated error code';
 
 # clone(bare=>1) is a deliberate, friendly croak BEFORE libgit2 is touched
 # (the offset of the `bare` field isn't stable) - a plain die, not a typed

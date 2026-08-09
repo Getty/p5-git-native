@@ -7,6 +7,7 @@ use Git::Libgit2::Error ();
 use Git::Libgit2 qw(
   GIT_ENOTFOUND GIT_EEXISTS GIT_EAUTH GIT_ECERTIFICATE
   GIT_ECONFLICT GIT_ENONFASTFORWARD GIT_EUNBORNBRANCH GIT_EINVALIDSPEC
+  GIT_EMODIFIED
 );
 extends 'Throwable::Error';
 
@@ -27,6 +28,7 @@ sub is_conflict         { $_[0]->code == GIT_ECONFLICT       ? 1 : 0 }
 sub is_not_fast_forward { $_[0]->code == GIT_ENONFASTFORWARD ? 1 : 0 }
 sub is_unborn_branch    { $_[0]->code == GIT_EUNBORNBRANCH   ? 1 : 0 }
 sub is_invalid_spec     { $_[0]->code == GIT_EINVALIDSPEC    ? 1 : 0 }
+sub is_not_matched      { $_[0]->code == GIT_EMODIFIED       ? 1 : 0 }
 
 around BUILDARGS => sub {
   my ( $orig, $class, @args ) = @_;
@@ -78,7 +80,7 @@ re-throws it as a C<Git::Native::Error>. Every wrapper in the distribution
 routes its FFI int-returns through this so no raw libgit2 error object
 escapes the API.
 
-=method is_not_found / is_exists / is_auth / is_certificate / is_conflict / is_not_fast_forward / is_unborn_branch / is_invalid_spec
+=method is_not_found / is_exists / is_auth / is_certificate / is_conflict / is_not_fast_forward / is_unborn_branch / is_invalid_spec / is_not_matched
 
   if ( my $err = $@ ) {
     return if $err->is_not_found;   # treat "missing" as empty
@@ -87,8 +89,9 @@ escapes the API.
 
 Predicates over C<code> for the common failure kinds (C<GIT_ENOTFOUND>,
 C<GIT_EEXISTS>, C<GIT_EAUTH>, C<GIT_ECERTIFICATE>, C<GIT_ECONFLICT>,
-C<GIT_ENONFASTFORWARD>, C<GIT_EUNBORNBRANCH>, C<GIT_EINVALIDSPEC>). Each
-returns 1 or 0. For other codes compare C<< $err->code >> against the
-C<GIT_E*> constants exported by L<Git::Libgit2>.
+C<GIT_ENONFASTFORWARD>, C<GIT_EUNBORNBRANCH>, C<GIT_EINVALIDSPEC>,
+C<GIT_EMODIFIED>). Each returns 1 or 0. For other codes compare
+C<< $err->code >> against the C<GIT_E*> constants exported by
+L<Git::Libgit2>.
 
 =cut

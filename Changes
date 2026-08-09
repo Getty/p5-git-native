@@ -1,6 +1,29 @@
 Revision history for Git-Native
 
 {{$NEXT}}
+  - Repository: add compare-and-swap direct reference updates.
+    reference_create(..., expected_old => $oid) uses
+    git_reference_create_matching, and reference_set_target($name, $new_oid,
+    expected_old => $old_oid) uses lookup plus git_reference_set_target.
+    Stale expected OIDs throw Git::Native::Error with is_not_matched true.
+    expected_old => undef atomically requires an absent ref when creating.
+    The create path needs Git::Libgit2 to bind
+    git_reference_create_matching; until that parallel binding lands it
+    throws a clear function-not-bound error. libgit2 has no
+    git_reference_set_target_matching function: git_reference_set_target
+    already performs the atomic write by calling git_reference_create_matching
+    with the looked-up ref's OID.
+  - Remote: fetch and push now return a Git::Native::Remote::Result that
+    carries per-ref outcomes. libgit2 returns 0 even when individual refs
+    were skipped (non-fast-forward on fetch) or rejected (pre-receive
+    hook, protected branch, server-side non-ff on push) — the only way to
+    see those outcomes was through the per-ref callbacks. Git::Native now
+    installs them and surfaces the verdicts:
+      $r = $remote->fetch(refspecs => [...]);
+      for my $u (@{$r->updated})  { ... }   # accepted moves, {ref, from, to}
+      for my $r2 (@{$r->rejected}) { ... }  # push rejections, {ref, reason}
+    `from` is undef for refs that did not exist locally before; `reason`
+    is the libgit2 / server message ("" on a clean success).
   - Remote: install a certificate_check callback so SSH remotes work on
     libgit2 < 1.7 (which has no built-in known_hosts checking). Without it
     every git+ssh fetch/push/list_refs failed with GIT_ECERTIFICATE (-17)
