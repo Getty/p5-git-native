@@ -1,0 +1,86 @@
+---
+claimed_at: 2026-08-10T20:00:16Z
+claimed_by: git-native-worker
+class: standard
+completed: 2026-08-10
+created: 2026-08-10T15:27:28Z
+id: 5
+priority: medium
+started: 2026-08-10
+status: done
+tags:
+- pod
+- docs
+title: POD fehlt fuer fast die gesamte oeffentliche Oberflaeche
+updated: 2026-08-10T20:39:47Z
+---
+
+Nur reference_create und reference_set_target haben ein =method. Alles
+andere ist undokumentiert:
+
+Repository.pm (36 Methoden ohne =method): workdir gitdir is_bare reference
+  reference_delete reference_exists reference_names head head_unborn
+  head_detached set_head reference_symbolic_create blob_create_frombuffer
+  blob tree tree_builder commit object commit_create remote remote_create
+  remote_anonymous has_remote config config_snapshot config_string
+  config_bool revwalker branch has_branch branch_create branches tag
+  tag_create tag_delete tag_names status status_for_path signature_default
+Remote.pm: url name fetch push list_refs
+Reference.pm: name target is_symbolic symbolic_target shorthand is_branch
+  is_remote is_tag resolve set_target symbolic_set_target delete
+
+Die faktische Doku ist heute die Klassenliste in CLAUDE.md - die sieht
+kein CPAN-Nutzer. Betrifft besonders die Stellen mit nicht-erratbarer
+Semantik: head() -> undef bei unborn/missing HEAD, tag() -> undef bei
+lightweight tags, status auf bare repo (GIT_EBAREREPO), Revwalker::next
+-> undef bei ITEROVER, Remote::fetch/push -> Result mit updated/rejected.
+
+Grosses eigenstaendiges Stueck, nicht mit den Error-Tickets vermischen.
+CLAUDE.md verweist auf den pod-writer-Agenten; dessen @Author::GETTY
+PodWeaver-Konventionen (=attr/=method/=opt) gelten.
+Teil 1/3 (Repository.pm) fertig: 3 =attr + 36 =method dokumentiert, POD-only, kein Code angefasst. dzil build webt sauber (40 =head2), podchecker OK, prove -lr t/ = 44 Dateien / 437 Tests PASS (nur t/40 + t/41 skippen ohne Netz-Env). Drift-Fund als karr-15 abgelegt. Reference.pm/Remote.pm laufen parallel bei anderen Agenten.
+Teil 2/3 (Reference + kleine Wrapper) fertig: POD in Reference.pm, Blob.pm,
+Tree.pm, TreeBuilder.pm, Commit.pm, Branch.pm, Tag.pm, Config.pm,
+Revwalker.pm, Oid.pm, Signature.pm, Error.pm, Git/Native.pm. Repository.pm und
+Remote.pm/Credential.pm laufen parallel (Agent 1 / Agent 3).
+
+Alle dokumentierten Semantiken vorher empirisch am echten Repo verifiziert,
+nichts geraten. Neu dokumentierte Nicht-Offensichtlichkeiten u.a.: target/
+symbolic_target schliessen sich aus; set_target vs symbolic_set_target werfen
+jeweils auf dem falschen Reftyp; Mutatoren (set_target, rename) liefern ein
+NEUES Objekt, das alte bleibt ein Snapshot; Revwalker braucht zwingend ein
+push_*, next liefert undef bei ITEROVER, sorting mitten im Walk resettet den
+Walker und wirft die Startpunkte weg; Config get_string/get_bool -> undef nur
+bei ungesetztem Key; get_string nur auf Snapshot; Tag nur annotated, tag_names
+listet beide Arten; Oid-Overloads vergleichen immer volle 40 Zeichen.
+
+Ausgelassen: Revwalker::GIT_SORT_* sind Konstanten dieses Pakets und nicht
+exportiert - dokumentiert, aber nicht "aufgehuebscht". Ticket 17 aufgemacht
+fuer Oid->from_hex, das mit nacktem Carp-String statt Git::Native::Error stirbt.
+Teil 3/3 abgeschlossen; POD-Abdeckung als vollstaendig verifiziert (Pruefung
+durch den orchestrierenden Agenten, nicht durch den schreibenden).
+
+Methode: pro Modul die public subs (ohne fuehrenden _, ohne BUILD/DEMOLISH/
+DESTROY) gegen die =method/=attr-Eintraege gehalten, ueber alle 17 Module.
+
+Ergebnis: kein public sub ohne POD. Die auf den ersten Blick fehlenden
+Eintraege sind durchweg GRUPPIERTE POD-Zeilen, die eine naive Zaehlung nicht
+aufloest:
+
+  Error.pm:116       =method is_not_found / is_exists / ... / is_ambiguous  (12 Praedikate)
+  Revwalker.pm:142   =method hide_oid / hide_head / hide_ref / hide_glob
+  Reference.pm:158   =method is_branch / is_remote / is_tag
+  Branch.pm:114      =method is_local / is_remote
+  Remote.pm:864      =method url / name
+
+Ebenfalls kein Loch, sondern korrekte Auszeichnung: Error.pm dokumentiert
+check_rc als =func (Error.pm:105), nicht als =method - richtig, es ist eine
+ueber @EXPORT_OK exportierte Funktion und keine Methode.
+
+Nachtraeglich hinzugekommen und mitdokumentiert: object_by_prefix (Ticket 6,
+Repository.pm), is_ambiguous (Ticket 6, Error.pm), set_config_search_path
+(Ticket 13, Git/Native.pm). Repository.pm steht damit bei 42 POD-Eintraegen
+auf 42 public subs.
+
+Stand: prove -lr t/ = 46 Dateien / 496 Tests / PASS; dzil build webt fehlerfrei
+(von den Ticket-6- und Ticket-13-Agenten je verifiziert).
