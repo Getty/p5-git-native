@@ -1,0 +1,58 @@
+---
+claimed_at: 2026-08-10T16:15:31Z
+claimed_by: git-native-worker
+class: standard
+completed: 2026-08-10
+created: 2026-08-10T16:01:46Z
+id: 10
+priority: high
+started: 2026-08-10
+status: done
+tags:
+- bug
+- api
+title: signature_default liefert gelogene name/email-Attribute
+updated: 2026-08-10T16:23:35Z
+---
+
+Repository.pm:532-547, Erfolgspfad von signature_default:
+
+  if ( $rc == 0 ) {
+    my $obj = Git::Native::Signature->new(
+      name  => "<from-config>",  # placeholder; we own the C handle
+      email => "<from-config>",
+    );
+    $obj->{_handle} = $sig;
+    return $obj;
+  }
+
+Verifiziert: $repo->signature_default->email liefert den Literalstring
+"<from-config>", niemals die konfigurierte Adresse. Dasselbe fuer ->name.
+Der echte Wert steckt nur im C-Handle und wird nie ausgelesen.
+
+Fuer commit_create ist das folgenlos (dort geht das Handle an libgit2),
+aber jeder Consumer, der signature_default aufruft, um zu ZEIGEN oder zu
+pruefen, wer committen wuerde, bekommt Muell. Das ist eine oeffentliche
+Methode mit zwei oeffentlichen Attributen, die schlicht falsch sind.
+
+Kein einziger Test fasst signature_default an (grep ueber t/*.t leer) -
+deshalb ist das nie aufgefallen.
+
+Fix-Richtung: name/email/when/offset aus dem git_signature-Struct
+auslesen (Feldoffsets: char *name, char *email, git_time when) statt
+Platzhalter zu setzen. Alternativ die Attribute lazy aus dem Handle
+bauen. Tests dazu brauchen eine funktionierende Config-Isolation, also
+haengt es an Ticket 9.
+
+Lane: git-native-worker. Test: git-native-test-writer.
+Fix drin, Suite gruen (429 Tests, 42 Dateien; nur t/40 + t/41 skippen mangels TEST_GIT_NATIVE_*_URL). Nicht committet - Changes-Eintrag und Commit macht der Orchestrator.
+
+Weg 1 aus dem Auftrag, aber das Struct-Lesen wohnt in Signature statt in Repository: neuer Konstruktor Git::Native::Signature->from_handle($ptr) (Signature.pm:44-60), Spiegelbild von Oid::from_ptr. Signature bleibt reiner Wert-Wrapper, name/email behalten required => 1, Repository::signature_default schrumpft auf eine Zeile (Repository.pm:532-541). Weg 2 (lazy aus _handle) nicht genommen - haette den Konstruktionspfad und die required-Attribute aufgebrochen fuer null Gewinn.
+
+Struct-Offsets EMPIRISCH verifiziert gegen libgit2 1.5.1 (git_signature_now mit bekannten Werten + git_signature_new mit time=1234567890/offset=-330, beide exakt zurueckgelesen): 0 = char *name, 8 = char *email, 16 = int64 time, 24 = int offset, 28 = char sign (ungenutzt). unpack 'Q Q q l' ueber die ersten 28 Bytes.
+
+Memory-Ownership: from_handle adoptiert den Handle (DEMOLISH freed ihn). name/email werden per $ffi->cast('opaque','string',$p) nach Perl KOPIERT - separat verifiziert, dass die Kopien ein git_signature_free plus 2000 Allokationen Allocator-Churn ueberleben. Fallback-Zweig (Git::Native / unconfigured\@example.invalid) inhaltlich unveraendert.
+
+Neuer Test t/67-signature.t (6 Subtests, 19 Assertions), unabhaengig von der globalen Config: user.name/user.email werden per $repo->config->set_string auf Repo-Ebene gesetzt, die gewinnt ueber die globale. Haengt damit NICHT an Ticket 9. Deckt ab: konfigurierte Identitaet kommt raus / kein '<from-config>' mehr / when als plausibler Epoch + offset im UTC-Bereich / Config-Aenderung wird pro Aufruf neu gelesen / Signature ueberlebt ihr Repository inkl. Allocator-Churn / commit_create ohne expliziten author schreibt die konfigurierte Identitaet (Autor via git_commit_author zurueckgelesen - BORROWED pointer, bewusst nicht durch from_handle adoptiert) / from_handle croakt auf NULL.
+
+Nebenbefunde als Tickets 11 (namespace::clean + make_immutable stehen in CLAUDE.md, aber in null von 16 Modulen) und 12 (zwei Konventionen fuer die FFI::Platypus-Instanz) abgelegt statt hier mitzufixen.
