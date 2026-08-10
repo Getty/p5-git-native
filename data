@@ -1,0 +1,99 @@
+---
+claimed_at: 2026-08-10T20:30:07Z
+claimed_by: git-native-worker
+class: standard
+completed: 2026-08-10
+created: 2026-08-10T15:27:38Z
+id: 7
+priority: low
+status: done
+tags:
+- error
+- research
+title: GIT_EOWNER (-36) / dubious ownership - pruefen ob relevant
+updated: 2026-08-10T20:40:21Z
+---
+
+libgit2 1.5+ hat den git-aequivalenten Ownership-Check (CVE-2022-24765
+Analogon): ein Repo, das einem anderen UID gehoert, laesst sich nicht
+oeffnen, ausser es steht in safe.directory. Fehlercode GIT_EOWNER (-36),
+heute ohne Predicate.
+
+NICHT verifiziert - dafuer braeuchte es ein fremd-besessenes Repo (root
+oder zweiter User), das war hier nicht herstellbar. Erst pruefen, ob
+Git::Native->open das ueberhaupt so ausloest, bevor ein is_owner_mismatch
+Predicate dazukommt. Wenn ja, ist es fuer CI/Container-Nutzer der
+haeufigste unerklaerliche open-Fehler und gehoert dokumentiert.
+
+Lane: git-native-worker.
+Lokal nicht verifizierbar: der GIT_EOWNER-Pfad braucht ein Repo, das einem anderen UID gehoert - ohne root oder zweiten User auf dieser Maschine nicht herstellbar. Bleibt offen, bis jemand es in einem Container/CI mit abweichender UID reproduziert. Kein Predicate hinzufuegen, bevor der Code-Pfad bestaetigt ist.
+GELUNGEN - GIT_EOWNER (-36) ist reproduziert, unprivilegiert, ohne Namespace.
+is_owner_mismatch ist ergaenzt.
+
+Der Vermerk 'lokal nicht verifizierbar' war falsch, aber nicht aus dem Grund,
+den die Namespace-Idee vermutet hat. Zwei Befunde:
+
+1. Der Namespace-Weg ist tatsaechlich tot, gemessen. Ein unprivilegierter User
+   Namespace darf genau EIN uid-Mapping installieren, und das muss die eigene
+   euid sein - die eigenen Dateien gehoeren einem drinnen also immer selbst:
+     unshare -U --map-user=1001 -> id -u 1001, eigene Datei 1001
+     unshare -U -r              -> id -u 0,    eigene Datei 0
+     unshare -U (ohne Mapping)  -> id -u 65534, eigene Datei 65534
+     unshare -U --map-auto      -> 'unshare: failed to execute newuidmap:
+                                    No such file or directory'
+   Verschachteln hilft nicht: in NS-A existiert nur die eine gemappte uid, ein
+   NS-B kann nur daraus mappen.
+
+2. Der Namespace wird gar nicht gebraucht. libgit2 prueft den Besitz des
+   ARBEITSVERZEICHNISSES der Repository, und core.worktree darf auf ein
+   beliebiges Verzeichnis zeigen - inklusive der root-eigenen
+   Systemverzeichnisse, die jede Maschine schon hat. Repository im eigenen
+   tempdir anlegen, core.worktree = /usr/share setzen, Git::Native->open auf
+   das gitdir: fertig. Nichts privilegiert, nichts ausserhalb des tempdir
+   geschrieben, das fremde Verzeichnis wird nur ge-stat()et.
+
+Gemessen auf libgit2 1.5.1 (Alien::Libgit2):
+
+  safe.directory = /nonexistent/anderes  -> code -36, 'repository path
+                                            '/usr/share/' is not owned by
+                                            current user'  == GIT_EOWNER
+  safe.directory = /usr/share            -> oeffnet, workdir /usr/share/
+  gar kein safe.directory-Eintrag        -> code -3, 'config value
+                                            'safe.directory' was not found'
+  safe.directory = *                     -> code -36, NICHT geehrt
+
+Zwei davon sind eigenstaendige libgit2-1.5.1-Quirks und dokumentiert
+(=method-Block zu is_owner_mismatch in lib/Git/Native/Error.pm):
+
+- Ohne JEDEN safe.directory-Eintrag - der Normalzustand - kommt GIT_EOWNER gar
+  nicht an. libgit2 fragt die Config nach dem Multivar, bekommt GIT_ENOTFOUND
+  und gibt DAS zurueck. Der Nutzer sieht also einen not-found auf einen
+  Schluessel, den er nie gesetzt hat, und is_not_found ist das Predicate, das
+  antwortet - nicht is_owner_mismatch. Das ist genau der 'unerklaerliche
+  open-Fehler' aus dem Ticket, und er hat auf 1.5.1 den falschen Code.
+  Sobald irgendein safe.directory-Eintrag existiert, passend oder nicht, kommt
+  das echte GIT_EOWNER durch.
+- safe.directory = * (git's Blanko-Ausweg) wird von libgit2 1.5.1 nicht
+  geehrt; der Pfad muss woertlich dastehen.
+
+Aenderungen:
+- lib/Git/Native/Error.pm: is_owner_mismatch (GIT_EOWNER aus Git::Libgit2
+  importiert, keine hartkodierte -36), im Predicate-Heading, in der
+  Konstantenliste, plus zwei Absaetze Doku zum CI-/Container-Fall und den
+  beiden Quirks.
+- t/72-owner-mismatch.t (neu): echter GIT_EOWNER + Exklusivitaets-Sweep gegen
+  alle 12 anderen Predicates, safe.directory als Gegenprobe (dieselbe
+  Repository oeffnet damit - beweist, dass Block 1 den Ownership-Check misst
+  und nicht irgendein anderes Scheitern), und der Ohne-Eintrag-Fall als
+  Disjunktion -36/-3 mit note(), damit ein spaeteres libgit2 den Test nicht
+  faelschlich rot macht. Skippt sauber und mit Begruendung als root und wenn
+  kein fremdbesessenes Verzeichnis existiert. Der Namespace-Befund oben steht
+  als Kommentar im Kopf der Datei, damit ihn niemand nochmal versucht.
+- t/51-error-predicates.t: is_owner_mismatch in der synthetischen Matrix. Dabei
+  auch is_bare_repo und is_ambiguous nachgetragen - siehe eigenes Ticket.
+
+Mutationsgeprueft: is_owner_mismatch auf GIT_EAMBIGUOUS umverdrahtet -> t/51
+und t/72 fallen beide.
+
+prove -lr t/ = 48 Dateien / 510 Tests / PASS (t/40, t/41 skippen mangels
+Env-URLs). Kein Commit, kein Changes-Eintrag.
