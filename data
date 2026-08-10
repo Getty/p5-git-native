@@ -1,0 +1,41 @@
+---
+claimed_at: 2026-08-10T15:09:58Z
+claimed_by: git-native-worker
+class: standard
+completed: 2026-08-10
+created: 2026-08-10T15:07:28Z
+id: 1
+priority: high
+started: 2026-08-10
+status: done
+tags:
+- error
+- cas
+- pod
+title: 'Error: is_locked predicate (GIT_ELOCKED) + CAS-Retry-POD'
+updated: 2026-08-10T15:19:08Z
+---
+
+Ref-CAS-Retry ist heute unvollstaendig dokumentiert und unvollstaendig abbildbar.
+
+libgit2 nimmt fuer jeden Ref-Write ein refs/<name>.lock. Unter echter Contention
+kommt ein konkurrierender Writer daher mit GIT_ELOCKED (-14) zurueck, nicht mit
+GIT_EMODIFIED. Messung (16 gleichzeitige Prozesse): Retry nur auf is_not_matched
+=> 12/16 ueberleben, Zaehler 13 statt 17. Retry auf beide Codes => 16/16, Zaehler
+korrekt.
+
+Git::Native::Error hat is_not_matched (GIT_EMODIFIED), aber kein is_locked. Die
+POD von reference_create / reference_set_target erwaehnt nur is_not_matched, was
+sich liest als waere das die ganze Geschichte.
+
+TODO:
+- is_locked (GIT_ELOCKED, von Git::Libgit2 0.005 exportiert) in
+  lib/Git/Native/Error.pm ergaenzen, inkl. Import + =method-POD-Liste
+- POD von Repository::reference_create und reference_set_target: korrekter
+  Retry deckt is_not_matched UND is_locked ab
+- t/46-error-paths.t: is_locked-Assertion analog zu is_not_matched
+- Changes-Eintrag
+
+Konsument: karr vergleicht heute die nackte Zahl -14, um das zu umgehen.
+is_locked (GIT_ELOCKED, -14) added to Git::Native::Error (import + predicate + =method POD). CAS-Retry-POD in Repository::reference_create und reference_set_target ergaenzt: korrekter Retry deckt is_not_matched UND is_locked ab. t/46-error-paths.t: positive/negative Assertions fuer is_locked. Changes-Eintrag unter {{$NEXT}}. prove -lr t/ => All tests successful, Files=25 Tests=290; t/40-remote-ssh.t und t/41-remote-https.t skippen mangels TEST_GIT_NATIVE_SSH_URL / TEST_GIT_NATIVE_HTTPS_URL. Nur Working Tree, kein commit.
+Committed as 0a1c7c3 on main. Unreleased (still {{$NEXT}} after 0.004) — karr can drop its numeric -14 comparison once a release ships.
