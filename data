@@ -1,0 +1,74 @@
+---
+claimed_at: 2026-08-10T19:44:43Z
+claimed_by: git-native-test-writer
+class: standard
+completed: 2026-08-10
+created: 2026-08-10T16:52:51Z
+id: 18
+priority: high
+status: done
+tags:
+- remote
+- tests
+- phase4
+title: 't/68 pins the OLD 3-key fetch updated shape (blocks #16)'
+updated: 2026-08-10T20:40:59Z
+---
+
+t/68-credential-thunk-errors.t:83-87 asserts the fetch updated entry shape
+exactly:
+
+  is \@updated, [
+    { ref => $REFNAME, from => $HEX_OLD, to => $HEX_NEW },
+    { ref => "refs/remotes/origin/topic", from => undef, to => $HEX_NEW },
+  ], "...";
+
+Ticket #16 unified the updated entry shape across fetch and push to the
+four keys { ref, from, to, reason }, so update_tips now also emits
+reason => "". Test2::V0 is() is an exact deep compare, so both expected
+hashes now fail with [0]{reason} !exists / [1]{reason} !exists.
+
+Fix (one line per hash, no logic change):
+
+  { ref => $REFNAME, from => $HEX_OLD, to => $HEX_NEW, reason => "" },
+  { ref => "refs/remotes/origin/topic", from => undef, to => $HEX_NEW, reason => "" },
+
+NOT done in #16 because t/68 was outside that task file lock (three agents
+working concurrently). The unification itself is pinned in
+t/49-remote-callbacks.t section 3b.
+
+Second, optional: t/68 uses a real non-zero oid for the new tip, so it is
+unaffected by the other half of #16 (an all-zero NEW tip now maps to
+to => undef, meaning "ref deleted"). Adding a case for that here would be
+a good sibling to the existing all-zero OLD tip case.
+Done. Only t/68-credential-thunk-errors.t touched (no lib/, no other test).
+
+Part 1 (the failure): verified against lib/Git/Native/Remote.pm:514-540 rather than
+taking the ticket text on faith. _make_update_tips_thunk really does push
+{ ref, from, to, reason => "" }, so both expected hashes in the "recorded update
+survives the eval wrapper" deep compare needed reason => "" added. Not a bug in the
+#16 implementation, just a stale test.
+
+Part 2 (optional, DONE): the all-zero NEW tip really is implemented — the thunk runs
+_oid_hex_if_nonzero on BOTH tips (Remote.pm:523-524, helper at :546-551), so a zero
+new tip yields to => undef. Added as a sibling call in the same subtest:
+
+  $closure->( "refs/remotes/origin/gone", $old, $zero, 0 )  # returns 0
+  -> { ref => .../gone, from => $HEX_OLD, to => undef, reason => "" }
+
+Pinned as MEANING, not just return value: three assertions rather than one.
+(a) the three-entry deep compare shows the two sentinels side by side — zero OLD
+    tip => from undef ("did not exist yet"), zero NEW tip => to undef ("deleted");
+(b) an explicit [ map { $_->{to} } @updated ] check that the deleted ref is undef
+    and NOT the 40-zero oid — that is the distinction the normalisation exists for,
+    and it would fail loudly if the normalisation were dropped from the b side only
+    (oid_to_hex on zero bytes returns "0" x 40, which is not undef);
+(c) reason is "" across all three, pinning the #16 unification at the thunk level.
+Deliberately no fixture duplication: the end-to-end file:// proof of the same
+semantics is t/49-remote-callbacks.t section 4b; t/68 pins it network-free at the
+thunk. Cross-referenced in a comment both ways.
+
+Result: prove -lr t/ => Files=45, Tests=452, all successful. t/68 itself 2 subtests
+/ 12 assertions. t/40-remote-ssh.t and t/41-remote-https.t skip (TEST_GIT_NATIVE_SSH_URL
+/ TEST_GIT_NATIVE_HTTPS_URL not set) — expected, loud skips. No commit, no git add,
+no Changes entry.
