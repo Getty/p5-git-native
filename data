@@ -1,0 +1,106 @@
+---
+claimed_at: 2026-08-10T16:19:27Z
+claimed_by: git-native-test-writer
+class: standard
+completed: 2026-08-10
+created: 2026-08-10T15:48:33Z
+id: 9
+priority: high
+started: 2026-08-10
+status: done
+tags:
+- test
+- config
+- hygiene
+title: 'TestRepo-Isolation wirkungslos: libgit2 ignoriert GIT_CONFIG_GLOBAL'
+updated: 2026-08-10T16:23:30Z
+---
+
+Befund beim Schreiben von t/60-config-snapshot.t.
+
+t/lib/TestRepo.pm setzt GIT_CONFIG_GLOBAL=/dev/null und GIT_CONFIG_SYSTEM=/dev/null
+und CLAUDE.md (Abschnitt "Test Hygiene") behauptet, damit sei die Config des Users
+aus den Tests raus. Das stimmt fuer das git-CLI, aber NICHT fuer libgit2 1.5.1:
+libgit2 kennt GIT_CONFIG_GLOBAL nicht und liest den global level unveraendert aus
+$HOME/.gitconfig ueber seinen sysdir-Suchpfad.
+
+Reproduktion (Alien::Libgit2 1.5.1, mit einer ~/.gitconfig mit user.email):
+
+  # libgit2 ignoriert die Env-Var und liefert den echten Wert:
+  GIT_CONFIG_GLOBAL=/tmp/probe-gitconfig perl -Ilib -It/lib -e \
+    use TestRepo; use Git::Native; my ($r)=TestRepo::new_repo();
+    print $r->config_string("user.email")
+  -> torsten@raudss.us            (aus ~/.gitconfig)
+
+  # das git-CLI mit derselben Env-Var:
+  GIT_CONFIG_GLOBAL=/tmp/probe-gitconfig git config --get user.email
+  -> probe@example.invalid        (aus der Env-Var)
+
+  # HOME umbiegen wirkt dagegen:
+  HOME=/tmp/leer ... -> UNDEF
+
+Folgen:
+1. Testergebnisse haengen an der ~/.gitconfig des Entwicklers. Jede Assertion
+   ueber einen echten Config-Key (user.*, core.*, init.defaultBranch, ...) kann
+   auf einer anderen Maschine anders ausgehen. t/60-config-snapshot.t musste
+   deshalb den Vorher-Wert lesen statt undef zu erwarten.
+2. Repository->signature_default nimmt still die echte Identitaet des
+   Entwicklers; alle Test-Commits sind mit dessen Name/Mail signiert. Der
+   Fallback-Zweig (rc != 0, "unconfigured@example.invalid") wird nur auf
+   Maschinen OHNE ~/.gitconfig ueberhaupt ausgefuehrt - Coverage von
+   Repository.pm Zeile 535 ist damit maschinenabhaengig.
+3. Der Schutz vor dem Bug, den Git::Raw geschickt hat (Schreiben in die echte
+   ~/.gitconfig), haengt aktuell nur daran, dass set_string auf dem
+   repo-lokalen Level landet - nicht an der Env-Var.
+
+Fix-Richtung (nicht umgesetzt, eigene Lane):
+- entweder in TestRepo.pm $ENV{HOME} (und XDG_CONFIG_HOME) auf ein Tempdir
+  biegen, bevor Git::Native geladen wird, oder
+- sauberer: git_libgit2_opts(GIT_OPT_SET_SEARCH_PATH, ...) fuer
+  GIT_CONFIG_LEVEL_GLOBAL/XDG/SYSTEM auf ein leeres Verzeichnis setzen
+  (braucht ggf. ein Binding in Git::Libgit2).
+- CLAUDE.md "Test Hygiene" entsprechend korrigieren.
+
+Achtung: das aendert die geteilte Fixture fuer die ganze Suite - danach die
+komplette Suite laufen lassen, besonders alles was signature_default benutzt.
+
+Gefunden von: git-native-test-writer waehrend karr-3 / Coverage-Arbeit.
+Umgesetzt: Weg 1 (HOME/XDG_CONFIG_HOME-Redirect in einem BEGIN-Block in t/lib/TestRepo.pm), plus Regressionstest t/69-config-isolation.t.
+
+Weg 2 faellt aus: git_libgit2_opts ist in Git::Libgit2 0.005 NICHT gebunden
+(Git::Libgit2::FFI->can('git_libgit2_opts') -> false; kein Symbol mit
+opt/search_path/sysdir im Namespace). Nicht selbst gebunden - waere lib/-Lane.
+
+Gemessene Befunde:
+1. HOME muss VOR 'use Git::Native' gesetzt sein. Grund praeziser als im
+   Ticket vermutet: Git::Native laedt transitiv Git::Native::Credential,
+   und das ruft init_lib() zur Ladezeit - git_libgit2_init laeuft also
+   waehrend des 'use', nicht erst beim ersten ->init. Probe:
+     BEGIN-Redirect  -> Probe-Config wird gelesen
+     Runtime-Redirect nach dem 'use' -> weiterhin echte ~/.gitconfig
+2. libgit2 1.5.1 ignoriert auch GIT_CONFIG_NOSYSTEM. Getestet mit =1 und
+   =true: /etc/gitconfig wird weiter gelesen (hier filter.lfs.required=true).
+   Der System-Level bleibt damit un-isoliert -> Folgeticket.
+3. Die GIT_CONFIG_GLOBAL/GIT_CONFIG_SYSTEM-Zeilen bleiben drin (git-CLI).
+
+Was vorher heimlich an der Entwickler-Config hing:
+- Repository->signature_default nahm die echte Identitaet; ALLE Test-Commits
+  ohne explizite Signatur waren damit auf den Entwickler signiert und der
+  Fallback-Zweig (Repository.pm:540, 'unconfigured\@example.invalid') lief nie.
+  Jetzt laeuft er - und wird in t/69 assertiert.
+- init.defaultbranch=main aus ~/.gitconfig deckte die init()-Aufrufe ohne
+  initial_branch ab (t/20-remote-local.t:19/24/54, t/49-remote-callbacks.t).
+  Suite bleibt gruen, weil diese Tests ihre Refs explizit anlegen.
+- t/60-config-snapshot.t:42-47 hat den Bug als Kommentar dokumentiert und
+  liest deshalb den Vorher-Wert statt undef zu erwarten. Test bleibt gruen,
+  der Kommentar ist jetzt veraltet.
+- t/43-known-hosts.t:44 assertierte 'gegen die echten known_hosts des
+  Operators'; laeuft jetzt gegen ein leeres Temp-HOME. Assertion haelt, der
+  Kommentar stimmt nicht mehr. Datei-Pfad-Coverage liegt ohnehin in t/64.
+- t/40-remote-ssh.t (live) braucht das echte ~/.ssh fuer known_hosts, sonst
+  degradiert die Hostkey-Pruefung still zu 'warn und weiter'. Stellt HOME
+  jetzt aus $TestRepo::REAL_HOME wieder her.
+
+prove -lr t/: 44 Dateien, 437 Tests, PASS; t/40 + t/41 skippen mangels
+TEST_GIT_NATIVE_SSH_URL / TEST_GIT_NATIVE_HTTPS_URL.
+Fix + Regressionstest stehen. t/lib/TestRepo.pm: HOME/XDG_CONFIG_HOME-Redirect in einem BEGIN vor 'use Git::Native', plus Load-Order-Guard (die, wenn Git::Libgit2 schon geladen ist). GIT_CONFIG_GLOBAL/SYSTEM bleiben fuer das git-CLI drin. $TestRepo::REAL_HOME exportiert fuer Live-Tests. Neu: t/69-config-isolation.t (6 Subtests, Gegenprobe + Subprozess-Vergleich isoliert/nicht-isoliert); gegen die alte TestRepo verifiziert rot (4 von 6 Subtests fallen). Minimal angefasst: t/40-remote-ssh.t stellt HOME fuer ~/.ssh wieder her. git_libgit2_opts ist nicht gebunden -> Weg 1 gewaehlt, System-Level-Luecke als karr-13 abgelegt. prove -lr t/ PASS (44 Dateien, 437 Tests), t/40+t/41 skippen mangels Env-Vars. Kein Changes-Eintrag, kein Commit - CLAUDE.md 'Test Hygiene' muss noch nachgezogen werden.
