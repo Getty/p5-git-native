@@ -590,6 +590,12 @@ to that OID, otherwise it throws a L<Git::Native::Error> for which
 C<is_not_matched> is true. An explicit C<expected_old =E<gt> undef> requires
 the reference to be absent and creates it atomically.
 
+A correct retry loop has to cover two failure kinds, both normal under
+contention and both retryable: C<is_not_matched> (another writer moved the
+reference in the meantime) and C<is_locked> (a concurrent writer currently
+holds the C<refs/E<lt>nameE<gt>.lock> file). Retrying only on
+C<is_not_matched> silently loses updates.
+
 This path requires L<Git::Libgit2> to bind
 C<git_reference_create_matching>. If it does not, the method throws an
 actionable function-not-bound error instead of attempting an unavailable FFI
@@ -605,6 +611,11 @@ call.
 Atomically update an existing direct reference by name. C<expected_old> is
 required. A stale expected OID throws a L<Git::Native::Error> for which
 C<is_not_matched> is true and leaves the reference unchanged.
+
+As with C<reference_create>, a correct retry loop covers C<is_not_matched>
+(the reference moved under us) as well as C<is_locked> (a concurrent writer
+holds C<refs/E<lt>nameE<gt>.lock>); both are expected under contention and
+both are retryable.
 
 libgit2 does not provide a C<git_reference_set_target_matching> function.
 This method looks up the reference, checks the caller's expected OID, then

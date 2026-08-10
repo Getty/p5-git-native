@@ -2,7 +2,7 @@ use Test2::V0;
 use lib 't/lib';
 use TestRepo;
 use Git::Native;
-use Git::Libgit2 qw( GIT_EMODIFIED );
+use Git::Libgit2 qw( GIT_EMODIFIED GIT_ELOCKED );
 use Git::Native::Error;
 
 # The contract from the docs: every libgit2 failure surfaces as a Throwable
@@ -61,6 +61,16 @@ my $modified = Git::Native::Error->new(
 );
 ok $modified->is_not_matched, 'is_not_matched recognizes GIT_EMODIFIED';
 ok !$nf->is_not_matched, 'is_not_matched rejects an unrelated error code';
+
+# A concurrent ref writer holding refs/<name>.lock reports GIT_ELOCKED, not
+# GIT_EMODIFIED - a CAS retry loop must recognize both.
+my $locked = Git::Native::Error->new(
+  code    => GIT_ELOCKED,
+  message => 'the reference is locked',
+);
+ok $locked->is_locked, 'is_locked recognizes GIT_ELOCKED';
+ok !$locked->is_not_matched, 'is_not_matched rejects GIT_ELOCKED';
+ok !$nf->is_locked, 'is_locked rejects an unrelated error code';
 
 # clone(bare=>1) is a deliberate, friendly croak BEFORE libgit2 is touched
 # (the offset of the `bare` field isn't stable) - a plain die, not a typed

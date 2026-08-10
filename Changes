@@ -1,6 +1,12 @@
 Revision history for Git-Native
 
 {{$NEXT}}
+  - Error: new is_locked predicate (GIT_ELOCKED). libgit2 takes a
+    refs/<name>.lock for every reference write, so a concurrent writer
+    fails with GIT_ELOCKED (-14), not GIT_EMODIFIED. A compare-and-swap
+    retry loop that only retries on is_not_matched drops updates under
+    contention; reference_create / reference_set_target now document that
+    both codes are normal and retryable.
 
 0.004     2026-08-09 20:34:42Z
   - Repository: add compare-and-swap direct reference updates.
