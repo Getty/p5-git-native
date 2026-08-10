@@ -1,0 +1,108 @@
+---
+claimed_at: 2026-08-10T19:56:09Z
+claimed_by: git-native-worker
+class: standard
+completed: 2026-08-10
+created: 2026-08-10T16:19:12Z
+id: 13
+priority: low
+status: done
+tags:
+- test
+- config
+- hygiene
+- libgit2
+title: System-Level-Config (/etc/gitconfig) bleibt in Tests sichtbar
+updated: 2026-08-10T20:40:32Z
+---
+
+Folgeticket aus karr-9.
+
+Der HOME/XDG-Redirect in t/lib/TestRepo.pm isoliert global + XDG. Der
+System-Level bleibt sichtbar: libgit2 1.5.1 haelt /etc/gitconfig fest
+verdrahtet und ignoriert sowohl GIT_CONFIG_SYSTEM als auch
+GIT_CONFIG_NOSYSTEM (beide gemessen, kein Effekt).
+
+Auf dieser Maschine leckt dadurch filter.lfs.* aus /etc/gitconfig in jedes
+Test-Repo. Aktuell harmlos - keine Assertion haengt daran - aber es ist
+derselbe Klasse-von-Bug wie karr-9: ein Test kann auf einer Maschine mit
+gefuelltem /etc/gitconfig anders ausgehen.
+
+Der einzige unterstuetzte Weg ist
+  git_libgit2_opts(GIT_OPT_SET_SEARCH_PATH, GIT_CONFIG_LEVEL_SYSTEM, dir)
+und git_libgit2_opts ist in Git::Libgit2 0.005 nicht gebunden
+(Git::Libgit2::FFI->can('git_libgit2_opts') -> false).
+
+Zwei Optionen, beide ausserhalb der Test-Lane:
+a) Binding in Git::Libgit2 nachziehen (fremde Distribution, variadisch -
+   FFI::Platypus kann variadic, aber jede Option braucht eine eigene
+   Signatur).
+b) In Git::Native::Repository einen kleinen Wrapper anbieten, sobald das
+   Binding existiert; TestRepo wuerde ihn dann in seinem BEGIN aufrufen und
+   koennte gleichzeitig auf den HOME-Redirect verzichten.
+
+Bis dahin ist die Luecke in t/lib/TestRepo.pm und im Kopf von
+t/69-config-isolation.t dokumentiert.
+Umgesetzt (git-native-worker). Blockade aufgehoben: Git::Libgit2 0.006 (installiert, noch nicht auf CPAN) bindet git_libgit2_opts variadisch fuer die (int,string)-Form und exportiert GIT_OPT_SET_SEARCH_PATH + GIT_CONFIG_LEVEL_*.
+
+API-Ort: Git::Native->set_config_search_path(system|global|xdg|programdata => $dir),
+NICHT Git::Native::Repository. Begruendung: die Option mutiert eine prozessglobale
+sysdir-Tabelle in libgit2, kein Repository-State. Gemessen: ein bereits offenes
+Repository behaelt seine aufgeloeste Config; nur das naechste git_repository_open
+sieht die Aenderung. Eine Repository-Methode waere also eine Methode, die am
+eigenen Objekt beweisbar nichts tut. Git::Native ist ausserdem schon der Ort der
+handle-losen Klassenmethoden (open/init/clone/reference_name_is_valid).
+Signatur: Level per Namen (case-insensitiv), beliebige Kombination in einem Aufruf,
+undef = zurueck auf libgit2-Default, "" = Level blanken. rc laeuft durch check_rc.
+
+HOME-Redirect: bleibt, entgegen der Vermutung im Ticket. Messung (probe1, HOME
+unangetastet, nur Suchpfad auf Tempdir): user.email=(unset), filter.lfs.required=(unset)
+-> fuer die *Config* ist der Redirect ueberfluessig. Er bleibt aber fuer die
+Nicht-Config-Flaechen, die an HOME haengen: ~/.ssh/known_hosts (Remote.pm:734f,
+Hostkey-Pruefung, t/43) und die Default-Keypfade in Credential.pm:96f/131f. Ohne
+Redirect laesen die wieder das echte ~/.ssh des Operators -> exakt die
+Maschinenabhaengigkeit aus karr-9. Global/XDG-Suchpfad zeigen bewusst in dasselbe
+Wegwerf-HOME, damit "leg eine .gitconfig nach $TestRepo::HOME" weiter funktioniert
+(t/69 Counter-Probe).
+Load-Order-Guard bleibt, mit neuer Begruendung im die-Text: der Suchpfad gilt nur
+fuer danach geoeffnete Repositories.
+
+t/lib/TestRepo.pm: neues $TestRepo::SYSTEM_CONFIG_DIR ($HOME/etc, leer, existiert),
+set_config_search_path-Aufruf direkt nach "use Git::Native". Kommentarkopf auf drei
+Mechanismen umgeschrieben.
+
+t/69-config-isolation.t: 6 -> 9 Subtests. Neu:
+ - "the system level reads the redirected directory, not /etc": Probe-gitconfig in
+   SYSTEM_CONFIG_DIR -> probe.system sichtbar; entfernt -> undef; plus ein echter
+   /etc/gitconfig-Key (hier filter.lfs.clean) ist unsichtbar. Der Key wird generisch
+   aus /etc/gitconfig geparst (erster simpler Nicht-core-Key, sonst note) - nichts
+   ueber diese Maschine hardcodiert.
+ - "set_config_search_path argument guards": croak ohne Level / bei Tippfehler.
+ - "a process without TestRepo really does read /etc/gitconfig": Subprozess, drei
+   Laeufe - ohne TestRepo sieht er den echten Wert trotz GIT_CONFIG_SYSTEM=/dev/null,
+   mit TestRepo (unset), mit TestRepo + system=>undef wieder den echten Wert
+   (pinnt das dokumentierte Reset-Verhalten, ohne den Testprozess zu de-isolieren).
+Kontrollgruppe verifiziert: mit entferntem set_config_search_path-Aufruf in einer
+Repo-Kopie fallen genau Subtest 5 und 9.
+
+t/40-remote-ssh.t nicht angefasst; Mechanismus nachgewiesen intakt: TestRepo setzt
+$REAL_HOME weiterhin im BEGIN vor dem Redirect. Simulation von Zeile 42 gemessen:
+HOME zurueck auf /storage/raid/home/getty -> ~/.ssh/known_hosts lesbar, user.email
+(unset), filter.lfs.required (unset). Das Wiederherstellen von HOME kann die
+Config-Isolation jetzt gar nicht mehr aufheben, weil die Config nicht mehr an HOME
+haengt. Anmerkung/Drift: der Kommentar in t/40 ab Zeile 38 begruendet das noch mit
+"libgit2 resolved its config search path back when Git::Native was loaded" - Aussage
+stimmt weiter, ist aber nicht mehr der eigentliche Grund. Ein Satz, fremde Lane.
+
+Doku: CLAUDE.md "Test Hygiene" auf drei Mechanismen + neuen Isolationsumfang
+(system+programdata+global+xdg isoliert, repository bewusst nicht) umgeschrieben,
+Klassen-Layout um set_config_search_path ergaenzt. Kopf von t/69 ebenfalls.
+
+Voraussetzung: Git::Libgit2 0.006. cpanfile bewusst NICHT angefasst (zentraler Pin
+nach dem Release). Achtung: der Import in lib/Git/Native.pm zieht die
+GIT_CONFIG_LEVEL_*-Konstanten, gegen 0.005 schlaegt damit schon das Laden von
+Git::Native fehl, nicht erst die neue Methode.
+
+prove -lr t/: 46 Dateien, 496 Tests, PASS. t/40+t/41 skippen mangels
+TEST_GIT_NATIVE_SSH_URL / TEST_GIT_NATIVE_HTTPS_URL. dzil build + Pod::Simple:
+POD webt fehlerfrei. Kein Commit, kein Changes-Eintrag.
