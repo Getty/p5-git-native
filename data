@@ -1,0 +1,180 @@
+---
+claimed_at: 2026-08-10T20:33:45Z
+claimed_by: git-native-worker
+class: standard
+completed: 2026-08-10
+created: 2026-08-10T19:44:27Z
+id: 19
+priority: medium
+status: done
+tags:
+- cleanup
+- ffi
+- libgit2
+title: Lokal redeklarierte Konstanten auf Git::Libgit2 0.006 Exporte umstellen
+updated: 2026-08-10T20:41:04Z
+---
+
+Git::Libgit2 0.006 exportiert die Konstanten-Gruppen git_sort_t, git_direction,
+git_branch_t, git_filemode_t und git_status_t. Der Changes-Eintrag nennt als
+Motivation ausdruecklich, dass Consumer sie sonst lokal redeklarieren -
+Drift-Risiko. Git::Native ist genau so ein Consumer.
+
+Lokal nachgebaut, obwohl ab 0.006 importierbar:
+
+  lib/Git/Native/Branch.pm:9-13     GIT_BRANCH_LOCAL / _REMOTE / _ALL
+  lib/Git/Native/Revwalker.pm:12-17 GIT_SORT_NONE / _TOPOLOGICAL / _TIME / _REVERSE
+  lib/Git/Native/Remote.pm:79-82    GIT_DIRECTION_FETCH / _PUSH
+
+Das Import-Muster ist in der Distribution bereits etabliert und muesste nur
+fortgesetzt werden:
+
+  Git/Native.pm:7        GIT_REPOSITORY_INIT_BARE
+  Remote.pm:8            GIT_PASSTHROUGH
+  Revwalker.pm:6         GIT_ITEROVER
+  Config.pm:6            GIT_ENOTFOUND
+  Error.pm:7 / Repository.pm:6  (Gruppen-Import)
+
+Revwalker.pm ist der klarste Fall: die Datei importiert GIT_ITEROVER schon aus
+Git::Libgit2 und deklariert vier Zeilen darunter GIT_SORT_* selbst.
+
+Bewusst NICHT umzustellen (von Git::Libgit2 nicht exportiert, gehoeren uns):
+  Git/Native.pm:13   GIT_CLONE_OPTIONS_VERSION
+  Remote.pm:43-47    GIT_REMOTE_CALLBACKS_VERSION / _FETCH_OPTIONS_ / _PUSH_OPTIONS_
+  Signature.pm:19    SIG_HEADER_SIZE
+
+Nebenbei mitzunehmen, optional: t/33-status.t erklaert GIT_STATUS_WT_NEW und
+GIT_STATUS_WT_MODIFIED in Kommentaren ueber ihre Zahlenwerte (128 / 256) und
+vergleicht gegen Rohzahlen. Mit GIT_STATUS_* im Export koennte der Test
+symbolisch pruefen - dann kann er auch nicht mehr still falsch werden, wenn
+sich ein Bit verschiebt.
+
+Voraussetzung: Git::Libgit2 0.006, aktuell installiert aber noch NICHT auf CPAN
+released. Erst zusammen mit dem cpanfile-Pin auf 0.006 umsetzbar - siehe
+Ticket 6 und 13, die dieselbe Abhaengigkeit haben.
+
+Lane: aufteilbar - Branch.pm/Revwalker.pm sind git-native-worker,
+Remote.pm ist git-native-network-worker.
+Teil Remote.pm (git-native-network-worker): UMGESTELLT.
+
+lib/Git/Native/Remote.pm:79-82 (use constant GIT_DIRECTION_FETCH/_PUSH) entfernt,
+stattdessen an Zeile 8 mit importiert:
+
+  use Git::Libgit2 qw(
+    oid_to_hex GIT_PASSTHROUGH GIT_DIRECTION_FETCH GIT_DIRECTION_PUSH
+  );
+
+Beide Namen importiert, nicht nur der benutzte FETCH - damit bleibt der
+Symbol-Satz des Package unveraendert (Remote.pm hat kein namespace::clean,
+Git::Native::Remote::GIT_DIRECTION_PUSH() bleibt also aufloesbar wie vorher).
+
+Wertegleichheit verifiziert, nicht angenommen, auf drei Ebenen:
+1. Quelle p5-git-libgit2/lib/Git/Libgit2.pm:140-142 -> FETCH => 0, PUSH => 1
+   (Kommentar git_direction, include/git2/net.h), Export via @EXPORT_OK:45-46.
+2. Installiertes Modul zur Laufzeit (0.006 aus ~/perl5/lib/perl5/Git/Libgit2.pm
+   - das ist was die Suite laedt, nicht der Repo-Checkout): FETCH==0, PUSH==1.
+3. Nach der Umstellung gegeneinander: Git::Native::Remote::GIT_DIRECTION_FETCH()
+   == Git::Libgit2::GIT_DIRECTION_FETCH() und dito PUSH -> beide YES.
+Keine Abweichung, keine Vertauschung.
+
+Punkt 3 des Auftrags eingehalten: GIT_REMOTE_CALLBACKS_VERSION /
+GIT_FETCH_OPTIONS_VERSION / GIT_PUSH_OPTIONS_VERSION (Remote.pm:46-48) bleiben
+lokal, unberuehrt.
+
+Punkt 4: grep ueber t/ und lib/ vor dem Edit - kein Test importiert oder
+qualifiziert GIT_DIRECTION_* aus Remote.pm. Einzige Verwendung ueberhaupt war
+Remote.pm:179.
+
+Tests: prove -lr t/ = 46 Dateien / 496 Tests / PASS, identisch zum Baseline.
+t/40-remote-ssh.t und t/41-remote-https.t skippen mangels
+TEST_GIT_NATIVE_SSH_URL / TEST_GIT_NATIVE_HTTPS_URL (erwartet).
+t/20-remote-local.t einzeln verbose nachgefahren: 18/18, inkl. der beiden
+--prune-auf-push-Subtests ("bare has one ref after prune push", "pruned ref
+remained").
+
+Kein Commit, kein git add, kein Changes-Eintrag, kein karr move - wie beauftragt.
+
+Nebenbefund, siehe eigenes Ticket: der Push---prune-Pfad connectet mit
+GIT_DIRECTION_FETCH, nicht _PUSH. Die im Ticket erwaehnte Faktenkorrektur war
+uebrigens nicht am Ticket zu sehen (updated == created, kein Note-Eintrag) -
+falls das die gemeinte war, ist sie nicht gelandet.
+Teil 1/2 (git-native-worker): Branch.pm + Revwalker.pm + t/33-status.t erledigt. Remote.pm (GIT_DIRECTION_*) laeuft parallel bei git-native-network-worker.
+
+Umgestellt:
+  lib/Git/Native/Branch.pm    use constant{GIT_BRANCH_LOCAL/_REMOTE/_ALL} entfernt,
+                              stattdessen use Git::Libgit2 qw(GIT_BRANCH_LOCAL GIT_BRANCH_REMOTE GIT_BRANCH_ALL)
+  lib/Git/Native/Revwalker.pm use constant{GIT_SORT_*} entfernt, die vier Namen an den
+                              bestehenden GIT_ITEROVER-Import angehaengt (ein use-Statement)
+
+Wertegleichheit verifiziert, nicht angenommen - zwei Wege:
+  (a) Quelle gelesen: p5-git-libgit2/lib/Git/Libgit2.pm:135-147
+  (b) Laufzeitvergleich gegen die INSTALLIERTE 0.006
+      (/home/getty/perl5/lib/perl5/Git/Libgit2.pm, nicht das dev-Repo):
+      importierter Wert == bisher lokal deklarierter Wert, alle 7:
+      GIT_BRANCH_LOCAL 1, _REMOTE 2, _ALL 3,
+      GIT_SORT_NONE 0, _TOPOLOGICAL 1, _TIME 2, _REVERSE 4.
+      Kein Mismatch - kein Bug-Fund.
+
+Sichtbarkeit geprueft vor dem Entfernen der use-constant-Bloecke:
+  Beide Konstantengruppen sind Teil der oeffentlichen Oberflaeche und werden
+  paketqualifiziert benutzt - Repository.pm:421/428/449/455/876 (GIT_BRANCH_LOCAL/_ALL/
+  _REMOTE), t/59-branch-edge.t (5x), t/30-revwalk.t + t/57-revwalk-edge.t (GIT_SORT_*).
+  Weder Branch.pm noch Revwalker.pm benutzt namespace::clean, und beide haben keinen
+  Exporter - die per Exporter importierten Konstanten landen also im Paket-Namespace
+  und Git::Native::Branch::GIT_BRANCH_LOCAL bzw. Git::Native::Revwalker::GIT_SORT_TIME
+  loesen unveraendert auf. Nichts an der oeffentlichen Oberflaeche geaendert.
+  GIT_SORT_NONE und GIT_BRANCH_ALL werden im jeweiligen Modul selbst nicht benutzt
+  (nur POD bzw. Repository.pm) - trotzdem mitimportiert, sonst faellt der dokumentierte
+  Paket-Zugriff weg.
+
+Optionaler Teil t/33-status.t: mitgemacht.
+  use Git::Libgit2 qw(GIT_STATUS_CURRENT GIT_STATUS_WT_NEW GIT_STATUS_WT_MODIFIED),
+  platziert nach use Git::Native (Muster t/53-tree.t, und garantiert nach use TestRepo).
+  4 Rohzahl-Vergleiche symbolisch: & 128 -> & GIT_STATUS_WT_NEW (2x), & 256 ->
+  & GIT_STATUS_WT_MODIFIED, is ..., 0 -> is ..., GIT_STATUS_CURRENT.
+  Gleiche Anzahl Assertions, gleiche Bedeutung, und nicht schwaecher: die geprueften
+  Flags kommen aus libgit2 selbst, eine abgedriftete Perl-Konstante laesst den Test
+  fehlschlagen statt still durchgehen.
+
+Test: prove -lr t/ = 46 Dateien / 496 Tests / PASS - identisch zum gruenen Ausgangsstand.
+t/40-remote-ssh.t und t/41-remote-https.t skippen (TEST_GIT_NATIVE_SSH_URL /
+_HTTPS_URL nicht gesetzt), wie erwartet.
+
+Nicht angefasst: Remote.pm, Oid.pm, Error.pm, cpanfile, Changes. Kein Commit, kein git add.
+
+Beobachtung, kein Handlungsbedarf: Revwalker-POD zu sorting sagt weiter '...which are
+constants in this package and not exported' und Branch-POD nennt die Zahlenwerte
+(1/2/3). Beides bleibt faktisch korrekt (die Konstanten liegen weiterhin im Paket,
+werden weiterhin nicht re-exportiert), nur die Herkunft ist jetzt Git::Libgit2. Wer
+das explizit machen will, kann es beim naechsten POD-Durchgang mitnehmen - habe es
+bewusst nicht angefasst, um den Diff auf den Header zu beschraenken.
+Beide Haelften erledigt, zentral abgenommen.
+
+Branch.pm: GIT_BRANCH_LOCAL/_REMOTE/_ALL, Revwalker.pm: GIT_SORT_NONE/
+_TOPOLOGICAL/_TIME/_REVERSE, Remote.pm: GIT_DIRECTION_FETCH/_PUSH - alle aus
+Git::Libgit2 0.006 importiert statt lokal deklariert. Nicht umgestellt und
+bewusst lokal geblieben: GIT_CLONE_OPTIONS_VERSION, GIT_REMOTE_CALLBACKS_VERSION,
+GIT_FETCH_OPTIONS_VERSION, GIT_PUSH_OPTIONS_VERSION, SIG_HEADER_SIZE - von
+Git::Libgit2 nicht exportiert.
+
+Wertegleichheit von beiden Agenten unabhaengig verifiziert, und zwar gegen die
+INSTALLIERTE 0.006 unter ~/perl5/lib/perl5, nicht gegen den Repo-Checkout -
+die Testsuite laedt die installierte. Alle neun Werte identisch, keine
+Vertauschung von FETCH/PUSH.
+
+Beide Agenten haben die im jeweiligen Modul selbst ungenutzten Namen
+mitimportiert (GIT_SORT_NONE, GIT_BRANCH_ALL, GIT_DIRECTION_PUSH), damit der
+Symbolsatz der Pakete gleich bleibt - der paketqualifizierte Zugriff von aussen
+(Git::Native::Branch::GIT_BRANCH_LOCAL in Repository.pm und in drei Testdateien)
+haengt daran.
+
+Optionaler Teil mitgemacht: t/33-status.t vergleicht die vier Status-Flags jetzt
+symbolisch statt gegen 128/256. Der Import steht nach "use Git::Native" und damit
+nach "use TestRepo" - Load-Order-Anforderung gewahrt.
+
+Zwei Nebenbefunde, beide separat abgelegt: GIT_DIRECTION_PUSH war
+distributionsweit unbenutzt, weil der Push-prune-Pfad mit GIT_DIRECTION_FETCH
+verbindet (-> Ticket 21, CLAUDE.md korrigiert); und die Umstellung funktioniert
+nur, WEIL die Module kein namespace::clean haben (-> Ticket 20 ergaenzt).
+
+prove -lr t/ nach beiden Haelften gruen.
