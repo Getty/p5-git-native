@@ -1,0 +1,132 @@
+---
+claimed_at: 2026-08-10T20:34:45Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-10
+created: 2026-08-10T19:53:24Z
+id: 20
+priority: low
+status: done
+tags:
+- hygiene
+- drift
+title: 'Modul-Hygiene: namespace::clean fehlt distributionsweit'
+updated: 2026-08-10T20:41:10Z
+---
+
+Die Hausregel (CLAUDE.md-Ebene / briefing "Module hygiene") verlangt
+namespace::clean auf jedem .pm und "no Moo; __PACKAGE__->meta->make_immutable;"
+am Ende jeder Moo-Klasse. Faktisch hat KEIN Modul unter lib/Git/Native/
+eines von beidem (geprueft mit grep ueber Repository.pm und Error.pm,
+Treffer: null).
+
+Kein Bug, aber Drift zwischen Regel und Code. Zwei moegliche Aufloesungen:
+entweder distributionsweit nachziehen (namespace::clean ist bereits im
+cpanfile) oder die Regel korrigieren, falls das bewusst so ist -
+make_immutable ist bei Moo ohnehin kein Standard-Idiom.
+
+Gefunden waehrend Ticket 6; dort NICHT mitgeaendert, weil ein einzelnes
+Modul mit namespace::clean inkonsistenter waere als gar keines.
+
+Lane: git-native-worker.
+Korrektur der Faktenlage (vollstaendiger grep ueber alle 17 Module statt nur
+Repository.pm/Error.pm):
+
+"KEIN Modul hat namespace::clean, Treffer null" stimmt nicht. Genau EIN Modul
+hat es: lib/Git/Native/Remote/Result.pm:17. Die uebrigen 16 nicht. Das ist
+fuer die Aufloesung relevant - es gibt bereits einen Praezedenzfall in der
+Distribution, die Richtung "nachziehen" ist also die konsistente, nicht eine
+neu erfundene.
+
+Zum zweiten Teil: "no Moo; __PACKAGE__->meta->make_immutable" ist im Code
+tatsaechlich nullmal vorhanden - und das ist richtig so. make_immutable ist
+Moose (bzw. Moo nur ueber Moo::HandleMoose), kein Moo-Idiom; Moo hat kein
+->meta, solange nicht jemand Moose nachlaedt. Die Regel, die der Ticket-6-Agent
+zitiert hat, ist an dieser Stelle Moose-gemuenzt und auf eine reine
+Moo-Distribution nicht anwendbar. Hier ist also die REGEL zu praezisieren,
+nicht der Code - anders als bei namespace::clean.
+
+Damit zerfaellt das Ticket in zwei unabhaengige Haelften mit
+gegenlaeufiger Aufloesung:
+  a) namespace::clean auf die 16 verbleibenden Module nachziehen (Code folgt
+     Regel; Praezedenzfall Remote/Result.pm; namespace::clean ist bereits
+     im cpanfile).
+  b) make_immutable aus der Hausregel fuer Moo-Distributionen herausnehmen
+     oder auf Moose einschraenken (Regel folgt Realitaet).
+
+Beim Umsetzen von (a) beachten: namespace::clean entfernt importierte Subs aus
+dem Namensraum. Mehrere Module importieren Konstanten aus Git::Libgit2
+(GIT_ITEROVER, GIT_PASSTHROUGH, GIT_ENOTFOUND, ...) und Error.pm exportiert
+check_rc an alle Wrapper weiter - das muss modulweise geprueft werden, nicht
+pauschal eingefuegt. Ein "-except"-Fall ist wahrscheinlich.
+ACHTUNG vor der Umsetzung von (a): namespace::clean einzufuegen ist NICHT
+mechanisch. Waehrend Ticket 19 (Konstanten-Umstellung) konkret geworden:
+
+Branch.pm, Revwalker.pm und Remote.pm importieren ihre GIT_*-Konstanten jetzt
+per Exporter aus Git::Libgit2. Diese Konstanten sind KEIN Implementierungs-
+detail - sie sind dokumentierte oeffentliche Oberflaeche und werden
+paketqualifiziert von aussen benutzt:
+
+  lib/Git/Native/Repository.pm:421,428,449,455,876
+      Git::Native::Branch::GIT_BRANCH_LOCAL / _ALL / _REMOTE
+  lib/Git/Native/Repository.pm:879,899,902  (POD dokumentiert genau diesen Zugriff)
+  lib/Git/Native/Branch.pm:75               (POD-Beispiel)
+  t/59-branch-edge.t (5x), t/30-revwalk.t (4x), t/57-revwalk-edge.t (1x)
+
+namespace::clean entfernt importierte Subs am Ende der Compile-Phase aus dem
+Paket-Namensraum. Genau das wuerde Git::Native::Branch::GIT_BRANCH_LOCAL()
+unaufloesbar machen - Repository.pm braeche zur Laufzeit, drei Testdateien
+mit. Beide Ticket-19-Agenten haben unabhaengig voneinander festgestellt, dass
+die Umstellung nur deshalb funktioniert, WEIL die Module kein
+namespace::clean haben, und haben aus dem Grund bewusst auch die im Modul
+selbst ungenutzten Namen mitimportiert (GIT_SORT_NONE, GIT_BRANCH_ALL,
+GIT_DIRECTION_PUSH), um den Symbolsatz der Pakete nicht stillschweigend zu
+verkleinern.
+
+Damit ist (a) nicht mehr "16 mal use namespace::clean einfuegen". Wer es
+umsetzt, muss pro Modul entscheiden:
+  - -except => [qw(GIT_...)] fuer alles, was von aussen paketqualifiziert
+    erreichbar bleiben muss, oder
+  - die Konstanten explizit re-exportieren, oder
+  - den Zugriff distributionsweit auf einen anderen Weg umstellen (dann ist
+    es eine API-Aenderung und braucht einen Changes-Eintrag, kein
+    Hygiene-Ticket mehr).
+Gleiches gilt fuer check_rc, das Error.pm ueber @EXPORT_OK an jeden Wrapper
+weiterreicht.
+
+Empfehlung: (b) - die Regel praezisieren - zuerst erledigen, und (a) nur mit
+explizitem Nutzen pro Modul angehen. Der reale Gewinn von namespace::clean
+ist hier gering (die Distribution hat keine Namenskollisionen), das
+Bruchrisiko dagegen konkret und mit Zeilennummern belegt.
+Aufgeloest - und zwar in Richtung (b), Regel korrigieren, nicht Code.
+
+Der Widerspruch war nicht Regel-vs-Code, sondern Regel-vs-Regel: der Skill
+.claude/skills/git-native-core/SKILL.md:120-131 sagt bereits das Richtige und
+sogar mit Begruendung ("namespace::clean is in the cpanfile but is used by
+exactly one module ... Dont add it to a single file"; "No make_immutable.
+That is Moose language ... a silent no-op"). Falsch waren die drei
+AGENT-BRIEFINGS, die davon abwichen:
+
+  .claude/agents/git-native-worker.md:105,108
+  .claude/agents/git-native-network-worker.md:121,123
+  .claude/agents/git-native-phase5-worker.md:108,110
+
+Ein Agent bekommt sein Briefing per briefing.skills zwingend geladen - der
+Ticket-6-Agent hat also woertlich gelesen "namespace::clean on every .pm" und
+korrekt Drift gemeldet. Die Quelle der Drift waren die Briefings.
+
+Alle drei Briefings an den Skill angeglichen und um den heute dazugekommenen
+Grund ergaenzt: namespace::clean wuerde die aus Git::Libgit2 importierten
+Konstanten aus dem Paket-Namensraum fegen, auf die von aussen
+paketqualifiziert zugegriffen wird (Git::Native::Branch::GIT_BRANCH_LOCAL in
+Repository.pm:421/428/449/455/876, in dessen POD, und in t/30 / t/57 / t/59),
+ebenso das von Error.pm weitergereichte check_rc. Aus dem Hygiene-Ticket waere
+also ein Bruch mit Zeilennummern geworden.
+
+perl-core/SKILL.md NICHT angefasst: die Datei ist ueber 30 Projekte
+hardgelinkt (stat: Linkcount 30), und ihre Aussage ist korrekt - sie schreibt
+make_immutable fuer MOOSE-Klassen vor, und das gilt weiterhin. Die drei
+Agent-Briefings haben Linkcount 1, waren also gefahrlos editierbar.
+
+Kein Code geaendert, kein Modul hat namespace::clean bekommen oder verloren.
+Remote/Result.pm bleibt der einzige Nutzer.
