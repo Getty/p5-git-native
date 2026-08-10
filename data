@@ -1,0 +1,72 @@
+---
+claimed_at: 2026-08-10T16:15:01Z
+claimed_by: git-native-network-worker
+class: standard
+completed: 2026-08-10
+created: 2026-08-10T15:26:57Z
+id: 4
+priority: medium
+started: 2026-08-10
+status: done
+tags:
+- remote
+- network
+- ffi
+title: 'Remote: croak im Credential-Callback liegt ausserhalb des eval'
+updated: 2026-08-10T16:23:25Z
+---
+
+lib/Git/Native/Remote.pm, _make_credential_thunk:
+
+  my $cred = eval { $user_cb->(...) };
+  if ($@) { warn "credential callback died: $@"; return -1; }
+  return GIT_PASSTHROUGH unless defined $cred;
+  Carp::croak "credentials callback must return a Git::Native::Credential"
+    unless ref $cred && $cred->isa("Git::Native::Credential");
+
+Der eval faengt nur den User-Coderef ab. Der croak eine Zeile darunter
+stirbt aus dem FFI-Closure heraus ueber C-Frames von libgit2 hinweg -
+genau das, was der eval verhindern sollte. Ausgeloest durch einen
+User-Callback, der irgendwas zurueckgibt, das kein
+Git::Native::Credential ist (String, Hashref, falsches Objekt).
+
+Nicht reproduziert, weil der Callback bei file:// nie laeuft (siehe
+PASSTHROUGH-Ticket) - deshalb medium und nicht high, aber die
+Nichtreproduzierbarkeit ist selbst das Problem.
+
+Fix-Richtung: den Typcheck in den eval-Block ziehen oder auf
+warn + return -1 umstellen, konsistent mit dem die-Pfad darueber. Kein
+die darf aus dem Closure entkommen.
+
+Lane: git-native-network-worker.
+Fix: kein die verlaesst mehr ein FFI-Closure in Remote.pm.
+
+1) _make_credential_thunk (Remote.pm:446-451): Carp::croak ersetzt durch
+   warn + return -1, statt den Typcheck in den eval zu ziehen. Begruendung:
+   der eval-Zweig warnt "credential callback died: ..." - fuer einen falschen
+   Rueckgabewert waere das gelogen, und die croak-Message zeigte auf Remote.pm
+   statt auf den User-Callback. Eigene Meldung nennt den Vertrag UND was
+   tatsaechlich zurueckkam (_describe_value, Remote.pm:479). Rueckgabe -1,
+   nicht GIT_PASSTHROUGH: ein kaputter Callback darf nicht still zum naechsten
+   Auth-Typ durchfallen und spaeter als generisches "authentication required"
+   auftauchen; -1 propagiert libgit2 raus, check_rc wirft.
+
+2) Zweitbug in derselben Zeile: der Guard testete `ref $cred` (wahr fuer JEDE
+   Referenz) und rief dann ->isa. Bei einem unblessed Hashref starb das eine
+   Zeile FRUEHER als der croak, mit "Can@t call method isa on unblessed
+   reference". Jetzt Scalar::Util::blessed.
+
+3) Gleiche Fehlerklasse gefunden und mitgefixt: _make_update_tips_thunk
+   (Remote.pm:487-526) hatte ein nacktes `die` GANZ OHNE eval - NULL b-Oid
+   waehrend git_remote_fetch haette die Exception durch libgit2s C-Frames
+   getragen. Jetzt eval + warn + return -1 (nicht-null bricht den Fetch ab -
+   gewollt, sonst luege das Result durch Auslassung).
+
+Geprueft, sauber: _make_certcheck_thunk (bereits eval-gekapselt),
+_make_push_update_thunk (Body kann nicht sterben), Repository::status-Closure.
+
+Tests: t/52-credential-callback.t - der Ticket-4-Kommentar ist durch echte
+Subtests ersetzt (String, unblessed Hashref, falsch geblesstes Objekt; je
+lives/rc -1/isnt PASSTHROUGH/out-Param NULL/Warntext).
+t/68-credential-thunk-errors.t deckt die update_tips-Variante ab.
+prove -lr t/: 43 Dateien, 431 Tests, PASS; t/40+t/41 skipped (keine Env-Vars).
