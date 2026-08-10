@@ -1,0 +1,41 @@
+---
+claimed_at: 2026-08-10T16:47:08Z
+claimed_by: git-native-worker
+class: standard
+completed: 2026-08-10
+created: 2026-08-10T16:36:27Z
+id: 15
+priority: low
+started: 2026-08-10
+status: done
+tags:
+- repository
+- ux
+- error
+title: 'commit_create: fehlende Pflichtargumente ergeben opaken libgit2-Fehler statt
+  Croak'
+updated: 2026-08-10T20:40:43Z
+---
+
+Repository->commit_create validiert seine Pflichtargumente nicht Perl-seitig.
+
+  $repo->commit_create( tree => $tree, parents => [$c1] );   # message fehlt
+
+wirft:
+
+  Git::Native::Error  code=-1  message="invalid argument: 'string'"
+
+Das nennt weder den Methodennamen noch das fehlende Argument. Im selben
+File macht reference_set_target es richtig:
+
+  Carp::croak 'reference_set_target requires expected_old'
+    unless exists $opts{expected_old} && defined $opts{expected_old};
+
+Vorschlag: analoger Croak fuer commit_create auf `tree` und `message`
+(und ggf. `tree` als undef -> Oid->from_hex(undef) laeuft heute in einen
+ebenso unklaren Fehler). Kein Verhaltensbruch: beide Faelle sterben
+bereits, nur mit schlechterer Meldung.
+
+Gefunden beim Schreiben der POD (karr-5, Repository.pm). Bewusst nicht
+mitgefixt, weil das Ticket POD-only war.
+commit_create prueft jetzt Perl-seitig vor jedem FFI-Call (Repository.pm:244-250): 'commit_create requires tree' (defined), 'commit_create requires message' (defined), 'commit_create requires parents to be an arrayref' (nur wenn defined). Pflichtargumente im Code verifiziert: ohne tree stirbt es in Oid->from_hex ('expected 40-char hex, got ""' + uninitialized-Warnung), ohne message in libgit2 (Git::Native::Error code=-1 'invalid argument: string'). message => '' ist von libgit2 akzeptiert und bleibt akzeptiert (Pruefung auf defined, nicht truthy); parents => undef bleibt gleichbedeutend mit weggelassen. parents => 'abc' / {} lief vorher in 'Cant use string as an ARRAY ref' bzw. 'Not an ARRAY reference' aus Repository.pm:259 ohne Methodennamen. Keine Typpruefung auf Oid, keine Normalisierung ergaenzt. POD von commit_create stimmt unveraendert ('tree and message are required'). Neuer Test t/70-commit-create-args.t: sechs Croak-Faelle (missing/undef tree, missing/undef message, parents als String/Hashref) je mit Assertion auf Methodenname+Argument, auf 'kein Git::Native::Error' und darauf dass croak den Aufrufer verortet; plus Gegenproben (vollstaendiger Aufruf, parents weggelassen/undef, leere Message). Kein Changes-Eintrag, kein Commit.
