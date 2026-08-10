@@ -1,0 +1,109 @@
+---
+claimed_at: 2026-08-10T20:29:13Z
+claimed_by: git-native-worker
+class: standard
+completed: 2026-08-10
+created: 2026-08-10T16:41:07Z
+id: 17
+priority: low
+status: done
+tags:
+- error-handling
+- oid
+title: Oid->from_hex stirbt mit Carp-String statt Git::Native::Error
+updated: 2026-08-10T20:40:53Z
+---
+
+Git::Native::Oid->from_hex($bogus) stirbt nicht als Git::Native::Error,
+sondern mit einem nackten Carp-String aus der unteren Schicht:
+
+  Git::Native::Oid->from_hex("abc")
+  -> "oid_from_hex: expected 40-char hex, got 'abc' at lib/Git/Native/Oid.pm line 20."
+
+Der croak kommt aus Git::Libgit2::oid_from_hex; Oid.pm reicht ihn ungefiltert
+durch. Kein Verstoss gegen die Invariante "kein Git::Libgit2::Error leakt"
+(t/46) - es ist ein String, kein Fehlerobjekt - aber die Fehleroberflaeche ist
+inkonsistent: jeder andere Fehlerpfad der Distribution liefert ein Throwable
+Git::Native::Error mit ->code / ->is_*.
+
+Betrifft jeden Aufrufer, der einen Hex-String durchreicht, also praktisch die
+gesamte "Oid|hex"-Konvenienz (Repository->object/tree/commit/blob,
+Reference->set_target, TreeBuilder->insert, Revwalker->push_oid).
+Git::Native::Oid->from_raw croakt genauso (dort direkt in Oid.pm, "raw OID must
+be 20 bytes").
+
+Zu entscheiden: als Git::Native::Error mit GIT_EINVALIDSPEC werfen (dann waere
+->is_invalid_spec der Test), oder croak bewusst als "Programmierfehler, kein
+libgit2-Fehler" dokumentieren. Aktuell ist es nur undokumentiert.
+
+Gefunden beim POD-Schreiben (Ticket 5, Teil 2). Die POD sagt heute neutral
+"stirbt" / "croaks", ohne die Exception-Klasse zu pinnen - bleibt also gueltig,
+egal wie das entschieden wird.
+
+Lane: git-native-worker.
+Entschieden: CROAK, nicht Git::Native::Error. Umgesetzt in lib/Git/Native/Oid.pm.
+
+Begruendung (steht ausfuehrlich in der POD unter =method from_hex):
+
+1. Es gibt keinen libgit2-Code zu melden. Ein String, der nicht 40 Hex-Zeichen
+   ist, erreicht libgit2 nie - git_oid_fromstr wird nicht aufgerufen. Ein
+   Git::Native::Error mit GIT_EINVALIDSPEC waere der einzige erfundene ->code
+   der Distribution, mit einem ->klass, der auf kein libgit2-Subsystem zeigt.
+   Jeder andere ->code kommt durch check_rc aus libgit2 heraus.
+
+2. Die Unterscheidbarkeits-Logik aus #6 greift hier - in derselben Richtung.
+   GIT_EINVALIDSPEC vergibt libgit2 echt, naemlich fuer einen abgelehnten
+   Refnamen/Refspec. Bei reference_create($name, $hex) koennte ein Aufrufer
+   mit is_invalid_spec dann nicht mehr sagen, WELCHES der beiden Argumente
+   falsch war. Genau die Kollision, die #6 fuer is_ambiguous vermieden hat.
+
+   Abgrenzung zu #6, weil sie nicht identisch sind: #6 musste einen Code
+   VERWERFEN, den libgit2 bereits produziert hatte (GIT_EAMBIGUOUS fuer einen
+   zu kurzen Praefix). #17 muss nur darauf verzichten, einen zu ERFINDEN. #17
+   ist damit der leichtere Fall derselben Regel, nicht ein von #6 kopiertes
+   Urteil.
+
+3. Symmetrie: from_raw und from_ptr croaken schon, object_by_prefix (#6) und
+   commit_create (#15/t70) croaken bei ihren Argumentpruefungen. from_hex
+   allein werfen zu lassen haette die Konvention innerhalb einer Klasse
+   gespalten.
+
+Was sich konkret geaendert hat:
+
+- from_hex prueft jetzt Perl-seitig und croakt mit einer Meldung, die
+  Git::Native::Oid->from_hex nennt (bisher kam der croak aus
+  Git::Libgit2::oid_from_hex und nannte einen FFI-Helper, den der Aufrufer nie
+  aufgerufen hat). Akzeptierte Eingaben sind unveraendert: /\\A[0-9a-fA-F]{40}\\z/.
+- Bei einem kurzen Hex-String zeigt die Meldung auf
+  Repository->object_by_prefix - der haeufigste Fall, und seit #6 gibt es
+  etwas, worauf man zeigen kann.
+- from_raw croakt jetzt auch bei undef statt zu warnen, Meldung nennt die
+  Klasse (Substring '20 bytes' erhalten, t/45 haengt daran).
+- our @CARP_NOT = qw( Repository Reference Revwalker TreeBuilder ) in Oid.pm.
+  Ohne das beschuldigt der croak beim Weg ueber die Oid|hex-Konvenienz eine
+  Zeile INNERHALB der Distribution (Repository.pm 227 statt der Aufruferzeile)
+  - also genau die Kritik aus dem Ticket, nur an anderer Stelle. Mit @CARP_NOT
+  zeigt die Meldung auf die Aufruferzeile, wie t/70 es fuer commit_create
+  einfordert. Gemessen: ohne @CARP_NOT faellt t/73 um.
+
+Test: t/73-oid-invalid-input.t (neu, 5 Subtests). Deckt from_hex-Ablehnungen
+inkl. trailing newline, die noch akzeptierten Formen (40 hex, uppercase),
+from_raw, alle 14 Wrapper der Oid|hex-Konvenienz (Repository->object/tree/
+commit/blob/commit_create(tree|parents)/reference_create(+expected_old)/
+branch_create/tag_create, Reference->set_target, Revwalker->push_oid/hide_oid,
+TreeBuilder->insert) - und als eigentlichen Beweis der Begruendung einen Block,
+der reference_create zweimal falsch aufruft, einmal im Refnamen (echter
+GIT_EINVALIDSPEC, is_invalid_spec == 1) und einmal in der OID (croak), und
+festhaelt, dass die beiden unterscheidbar bleiben.
+
+Mutationsgeprueft: Git::Native::Error statt croak -> 4 von 5 Subtests fallen;
+@CARP_NOT entfernt -> 1 Subtest faellt.
+
+POD: =method from_hex traegt die Begruendung, =description sagt, dass es fuer
+die gesamte Oid|hex-Konvenienz gilt. Die vorher neutrale Formulierung ist damit
+in Richtung croak festgelegt. Kein Widerspruch zur POD von object_by_prefix in
+Repository.pm ('ein Bug im aufrufenden Code, keine Eigenschaft des
+Repositories') - dieselbe Trennlinie.
+
+prove -lr t/ = 48 Dateien / 510 Tests / PASS (t/40, t/41 skippen mangels
+Env-URLs). Kein Commit, kein Changes-Eintrag.
