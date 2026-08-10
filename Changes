@@ -23,6 +23,30 @@ Revision history for Git-Native
     (t/52), binary blob content with embedded NULs, open_ext and the init
     argument guards, _known_hosts_match including @revoked and
     @cert-authority, and _build_strarray's NULL-on-empty semantics.
+  - Repository: signature_default returned a Signature whose name and
+    email were the literal string '<from-config>'. The real values sat in
+    the C handle and were never read, so anything asking who would commit
+    got a placeholder. New Signature->from_handle reads name / email /
+    when / offset out of the git_signature struct and copies them into
+    Perl, so they survive the handle being freed.
+  - Remote: nothing can die out of an FFI closure any more. The credential
+    callback's type check sat outside its eval, so a callback returning
+    something that is not a Git::Native::Credential died across libgit2's
+    C frames; the check also used `ref` before calling ->isa, which died
+    one line earlier on an unblessed reference. The update_tips callback
+    had a bare die with no eval at all. All three now warn and return a
+    negative rc, which libgit2 propagates for check_rc to throw.
+  - Remote, Revwalker: use the GIT_PASSTHROUGH / GIT_ITEROVER constants
+    from Git::Libgit2 instead of re-declaring them locally.
+  - Tests: t/lib/TestRepo.pm now really isolates the developer's git
+    config. GIT_CONFIG_GLOBAL / GIT_CONFIG_SYSTEM only reach the git CLI -
+    libgit2 does not know them and guesses its config search path from
+    HOME once, during git_libgit2_init. A BEGIN block redirects HOME and
+    XDG_CONFIG_HOME before Git::Native is loaded, and TestRepo refuses to
+    load after it. Until now every test commit was signed with the
+    developer's identity and results depended on their ~/.gitconfig.
+    Regression test in t/69-config-isolation.t; the system level
+    /etc/gitconfig stays visible.
   - Tests: t/20-remote-local.t no longer claims to cover the PASSTHROUGH
     credential path. libgit2 invokes the credential callback only when
     the transport raises an auth challenge, which file:// never does, so

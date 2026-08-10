@@ -32,6 +32,15 @@ if ($key_path) {
   plan skip_all => "SSH key not readable at $key_path" unless -r $key_path;
 }
 
+# TestRepo redirects HOME into a throwaway directory so libgit2 cannot read the
+# operator's ~/.gitconfig (t/69-config-isolation.t). The live SSH path needs the
+# real home back: ssh keys, and above all ~/.ssh/known_hosts, which
+# Git::Native::Remote verifies the hostkey against - an empty HOME would silently
+# downgrade that to "host not in known_hosts, warn and continue". libgit2 resolved
+# its config search path back when Git::Native was loaded, so restoring HOME here
+# does not undo the config isolation.
+$ENV{HOME} = $TestRepo::REAL_HOME if defined $TestRepo::REAL_HOME;
+
 my $tmp = Path::Tiny->tempdir;
 my $repo = Git::Native->init("$tmp");
 my $remote = $repo->remote_create( 'origin', $url );

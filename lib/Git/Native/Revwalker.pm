@@ -3,6 +3,7 @@
 package Git::Native::Revwalker;
 use Moo;
 use Carp ();
+use Git::Libgit2 qw( GIT_ITEROVER );
 use Git::Libgit2::FFI ();
 use Git::Native::Error qw( check_rc );
 use FFI::Platypus::Buffer qw( scalar_to_buffer );
@@ -13,7 +14,6 @@ use constant {
   GIT_SORT_TOPOLOGICAL => 1,
   GIT_SORT_TIME        => 2,
   GIT_SORT_REVERSE     => 4,
-  GIT_ITEROVER         => -31,
 };
 
 has _handle => ( is => 'ro', required => 1 );

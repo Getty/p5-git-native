@@ -111,11 +111,61 @@ subtest 'a dying user coderef is contained inside the closure' => sub {
     'the warning carries the original error';
 };
 
-# NOT TESTED HERE: a user callback returning something that is not a
-# Git::Native::Credential. _make_credential_thunk croaks for that case from
-# *outside* the eval, so in production the die unwinds out of the FFI closure
-# through libgit2's C frames - see karr ticket 4. Exercising it from a test
-# can leave the process in an undefined state, and the fix belongs to
-# git-native-network-worker, so this file stops at the boundary.
+# Regression test for karr ticket 4. The type check used to Carp::croak from
+# *outside* the eval that wraps the user coderef, so a callback returning the
+# wrong thing unwound a Perl exception out of the FFI closure through libgit2's
+# C frames - exactly what the eval one line above was there to prevent.
+#
+# Each shape below hit a different flavour of the same bug: a plain string
+# reached the croak; an unblessed reference died one step earlier inside
+# ->isa ("Can't call method \"isa\" on unblessed reference"), because the guard
+# tested `ref $cred` (true for any reference) rather than blessedness; a
+# blessed object of the wrong class reached the croak too.
+#
+# The contract now: warn with the same diagnosis the croak carried, and return
+# a negative rc. Not GIT_PASSTHROUGH - a broken callback must fail the
+# operation loudly, not fall through to the next auth type and surface later
+# as a generic "authentication required".
+subtest 'a user coderef returning a non-credential is contained inside the closure' => sub {
+  my @cases = (
+    { what    => 'a plain string',
+      value   => 'ssh-agent',
+      names   => qr/'ssh-agent'/ },
+    { what    => 'an unblessed reference',
+      value   => { username => 'git' },
+      names   => qr/HASH reference/ },
+    { what    => 'a blessed object of the wrong class',
+      value   => bless( {}, 'Git::Native::NotACredential' ),
+      names   => qr/Git::Native::NotACredential object/ },
+  );
+
+  for my $case (@cases) {
+    my $what = $case->{what};
+    my ( $closure, $keep ) = Git::Native::Remote::_make_credential_thunk(
+      sub { return $case->{value} },
+    );
+
+    my ( $out, $cell ) = out_cell();
+    my @warnings;
+    my $rc;
+    my $survived = lives {
+      local $SIG{__WARN__} = sub { push @warnings, $_[0] };
+      $rc = $closure->( $out, $URL, $USER_FROM_URL, $ALLOWED, 0 );
+    };
+
+    ok $survived,
+      "$what: the closure returns instead of dying out through libgit2's C frames";
+    is $rc, -1, "$what: reported as rc -1";
+    isnt $rc, GIT_PASSTHROUGH,
+      "$what: NOT passthrough - a broken callback must not silently fall through to the next auth type";
+    is unpack( 'J', $$cell ), 0,
+      "$what: the out-param stays NULL, so libgit2 never dereferences a credential we did not produce";
+    is scalar(@warnings), 1, "$what: diagnosed exactly once";
+    like $warnings[0], qr/must return a Git::Native::Credential/,
+      "$what: the warning states the contract the callback broke";
+    like $warnings[0], $case->{names},
+      "$what: the warning names what the callback actually returned";
+  }
+};
 
 done_testing;

@@ -532,16 +532,10 @@ sub status_for_path {
 sub signature_default {
   my $self = shift;
   my $rc = Git::Libgit2::FFI::git_signature_default( \my $sig, $self->_handle );
-  if ( $rc == 0 ) {
-    # We got an allocated git_signature*; wrap it without going through
-    # Signature::_build_handle.
-    my $obj = Git::Native::Signature->new(
-      name  => '<from-config>',  # placeholder; we own the C handle
-      email => '<from-config>',
-    );
-    $obj->{_handle} = $sig;
-    return $obj;
-  }
+  # We got an allocated git_signature*; from_handle adopts it and copies
+  # name/email/when out of the struct, so the attributes report what the
+  # config actually says instead of a placeholder.
+  return Git::Native::Signature->from_handle($sig) if $rc == 0;
   # Fallback if no user.name/email configured.
   return Git::Native::Signature->new(
     name  => 'Git::Native',

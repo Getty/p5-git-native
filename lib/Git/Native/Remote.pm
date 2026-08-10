@@ -3,8 +3,9 @@
 package Git::Native::Remote;
 use Moo;
 use Carp ();
+use Scalar::Util ();
 use Git::Libgit2::FFI ();
-use Git::Libgit2 qw( oid_to_hex );
+use Git::Libgit2 qw( oid_to_hex GIT_PASSTHROUGH );
 use Git::Native::Error qw( check_rc );
 use FFI::Platypus::Buffer qw( scalar_to_buffer );
 use FFI::Platypus::Memory qw( memcpy malloc free );
@@ -75,8 +76,6 @@ use constant {
   FETCH_OPTS_PRUNE_OFFSET     => 128,  # int (8 + 120)
 
   PUSH_OPTS_CALLBACKS_OFFSET  => 8,
-
-  GIT_PASSTHROUGH => -30,
 
   GIT_DIRECTION_FETCH => 0,
   GIT_DIRECTION_PUSH  => 1,
@@ -425,6 +424,11 @@ sub _build_push_options {
 # Wrap a user coderef so it conforms to git_credential_acquire_cb.
 # Returns ($closure, $keepalive). The closure must outlive the C call —
 # the keepalive bundle is what the Remote method holds onto.
+#
+# NOTHING in here may die: the closure is called from libgit2's C frames,
+# and a Perl exception unwinding across them is undefined behaviour. Every
+# failure mode reports via warn and returns a negative rc, which libgit2
+# propagates out of git_remote_fetch/push for check_rc to throw properly.
 sub _make_credential_thunk {
   my ($user_cb) = @_;
   my $ffi = Git::Libgit2::FFI::ffi();
@@ -443,8 +447,12 @@ sub _make_credential_thunk {
       return -1;
     }
     return GIT_PASSTHROUGH unless defined $cred;
-    Carp::croak "credentials callback must return a Git::Native::Credential"
-      unless ref $cred && $cred->isa('Git::Native::Credential');
+    unless ( Scalar::Util::blessed($cred)
+             && $cred->isa('Git::Native::Credential') ) {
+      warn "credentials callback must return a Git::Native::Credential "
+         . "or undef, got " . _describe_value($cred) . "\n";
+      return -1;
+    }
 
     # Disown the wrapper — libgit2 takes ownership on return 0.
     my $cred_handle = $cred->_disown;
@@ -463,6 +471,19 @@ sub _make_credential_thunk {
   return ( $closure, [ \$closure ] );
 }
 
+# Name a value for a diagnostic without ever dying on it — a blessed object
+# may carry an overloaded (and throwing) stringifier, so report its class
+# instead of interpolating it. Only used from inside FFI closures, where a
+# die is not survivable.
+sub _describe_value {
+  my ($v) = @_;
+  if ( my $class = Scalar::Util::blessed($v) ) { return "a $class object" }
+  if ( my $type  = ref $v )                    { return "a $type reference" }
+  my $str = "$v";
+  $str = substr( $str, 0, 60 ) . '...' if length($str) > 63;
+  return "the non-reference value '$str'";
+}
+
 # Build the update_tips closure (git_remote_callbacks.update_tips).
 # Records each accepted ref update into the caller's $updated arrayref.
 #
@@ -472,22 +493,33 @@ sub _make_credential_thunk {
 # ref didn't exist locally (the bytes are zero-filled — a zero SHA-1).
 # We translate the all-zero "no previous ref" case to from => undef so
 # callers can tell new-ref from same-oid updates without a magic constant.
-# b is always the new local tip. Always returns 0 — returning non-zero
-# would abort the fetch.
+# b is always the new local tip. Returns 0 on success — returning non-zero
+# aborts the fetch, which is what we want if libgit2 handed us something we
+# cannot record (a NULL new tip), because the Result would otherwise lie by
+# omission. Like every FFI closure here it must not let a die escape into
+# libgit2's C frames, so the body runs under eval and reports via warn.
 sub _make_update_tips_thunk {
   my ($updated) = @_;
   my $ffi = Git::Libgit2::FFI::ffi();
   my $closure = $ffi->closure(sub {
     my ( $refname, $a_ptr, $b_ptr, $payload ) = @_;
 
-    my $from = $a_ptr ? _oid_hex_if_nonzero($a_ptr) : undef;
-    my $to   = $b_ptr ? _oid_hex($b_ptr) : die
-      "update_tips callback got NULL b oid for ref '$refname'";
-    CORE::push @$updated, {
-      ref  => $refname,
-      from => $from,
-      to   => $to,
+    my $ok = eval {
+      die "update_tips callback got NULL b oid for ref '$refname'\n"
+        unless $b_ptr;
+      my $from = $a_ptr ? _oid_hex_if_nonzero($a_ptr) : undef;
+      my $to   = _oid_hex($b_ptr);
+      CORE::push @$updated, {
+        ref  => $refname,
+        from => $from,
+        to   => $to,
+      };
+      1;
     };
+    if ( !$ok ) {
+      warn "Git::Native update_tips callback failed: $@";
+      return -1;
+    }
     return 0;
   });
   return ( $closure, [ \$closure ] );

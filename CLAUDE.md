@@ -62,11 +62,14 @@ Git::Native::Revwalker    ->push_head / ->push_ref / ->push_oid / ->push_glob / 
 Git::Native::Branch       ->name / ->refname / ->target / ->is_head / ->is_local / ->is_remote
                           ->rename($new) / ->delete
 Git::Native::Tag          ->name / ->message / ->target_id   (annotated only)
-Git::Native::Signature    name, email, when
+Git::Native::Signature    name, email, when, offset
+                          ->from_handle($ptr)  adopts a libgit2-allocated
+                          git_signature*, copying the fields out of the struct
 Git::Native::Oid          stringify hex, ->raw (20B), ->short(7)
 Git::Native::Error        isa Throwable::Error; code, klass, message
                           is_not_found / is_exists / is_auth / is_certificate /
                           is_conflict / is_not_fast_forward / is_unborn_branch / is_invalid_spec
+                          is_not_matched / is_locked / is_bare_repo
                           check_rc (exported) wraps Git::Libgit2::Error
 ```
 
@@ -130,16 +133,37 @@ are stable across 1.5 -> 1.9.
 
 ## Test Hygiene
 
-`t/lib/TestRepo.pm` sets `GIT_CONFIG_GLOBAL=/dev/null
-GIT_CONFIG_SYSTEM=/dev/null` to keep the user's `~/.gitconfig` out of the
-tests (the exact bug Git::Raw shipped). **This does not actually work on
-libgit2 1.5.1** — libgit2 does not honour `GIT_CONFIG_GLOBAL` and reads the
-global level from `$HOME/.gitconfig` through its own sysdir search path, so
-`config_string('user.email')` returns the developer's real address inside
-the suite. Only overriding `HOME` suppresses it. Verified; tracked as karr
-ticket 9. Until that is fixed, treat config-dependent tests as reading the
-developer's environment, and don't assert on config values that the user's
-own gitconfig could supply.
+`t/lib/TestRepo.pm` keeps the user's git config out of the suite (the exact
+bug Git::Raw shipped). It takes two mechanisms, because the obvious one only
+covers half:
+
+- `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null` reaches the
+  **git CLI** that fixtures shell out to. libgit2 1.5 does not know those
+  variables at all, nor `GIT_CONFIG_NOSYSTEM`.
+- A `BEGIN` block redirects **`HOME` and `XDG_CONFIG_HOME`** to a throwaway
+  directory. That is what isolates libgit2, which guesses its config search
+  path from `HOME` **once**, during `git_libgit2_init`.
+
+The `BEGIN` is load-bearing: `use Git::Native` pulls in
+`Git::Native::Credential`, which calls `init_lib()` at load time, so libgit2
+is already initialised by the time the module body runs — assigning
+`$ENV{HOME}` after the `use` provably changes nothing. `TestRepo.pm`
+therefore refuses to load if `Git::Libgit2` is already in `%INC`; **always
+`use TestRepo;` before `use Git::Native;`**.
+
+Isolated: global + XDG. **Not** isolated: the repository level (tests set
+`user.name`/`user.email` on the repo they just created and must keep seeing
+them — `t/67-signature.t` relies on this), and the system level
+`/etc/gitconfig` — libgit2 hardcodes that path and the supported override,
+`git_libgit2_opts(GIT_OPT_SET_SEARCH_PATH)`, is not bound by
+`Git::Libgit2 0.005` (karr ticket 13).
+
+`t/69-config-isolation.t` is the regression test, with a control group: it
+also asserts that a probe config *is* read when it should be, so it can't
+pass by isolating nothing. Against the old fixture, 4 of its 6 subtests fail.
+`t/40-remote-ssh.t` restores `$TestRepo::REAL_HOME` — the live SSH path needs
+the operator's real `~/.ssh/known_hosts`, and an empty `HOME` would silently
+downgrade hostkey verification to "unknown host, warn and continue".
 
 `t/20-remote-local.t` covers the Phase 4 surface end-to-end with two
 working repos linked through a bare repo over `file://` — wildcard push,
@@ -189,10 +213,13 @@ documented rather than changed: `reference_delete` is idempotent (libgit2
 returns 0 for an absent ref, like `git update-ref -d`), unlike `reference()`
 and `tag()` which throw not-found.
 
-Known gaps, deliberate: the `DEMOLISH` `if $self->{_handle}` false branch in
+`t/67`–`t/69` came out of that layer: `signature_default` had no test at all
+and was returning placeholder attributes, the credential thunk let a `die`
+escape into libgit2's C frames, and the config isolation above did not work.
+
+Known gap, deliberate: the `DEMOLISH` `if $self->{_handle}` false branch in
 every wrapper is unreachable while `_handle` is `required => 1` — that is
-most of the remaining branch misses. `signature_default` has no test at all
-(karr ticket 10, it returns placeholder attributes).
+most of the remaining branch misses.
 
 ## Phase 5 - General-purpose Surface
 
