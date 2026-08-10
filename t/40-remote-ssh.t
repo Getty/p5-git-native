@@ -32,13 +32,18 @@ if ($key_path) {
   plan skip_all => "SSH key not readable at $key_path" unless -r $key_path;
 }
 
-# TestRepo redirects HOME into a throwaway directory so libgit2 cannot read the
-# operator's ~/.gitconfig (t/69-config-isolation.t). The live SSH path needs the
-# real home back: ssh keys, and above all ~/.ssh/known_hosts, which
-# Git::Native::Remote verifies the hostkey against - an empty HOME would silently
-# downgrade that to "host not in known_hosts, warn and continue". libgit2 resolved
-# its config search path back when Git::Native was loaded, so restoring HOME here
-# does not undo the config isolation.
+# TestRepo redirects HOME into a throwaway directory, and ~/.ssh is the whole
+# reason that redirect still exists (karr-13): ssh keys, and above all
+# ~/.ssh/known_hosts, which Git::Native::Remote verifies the hostkey against.
+# This test is exactly the case that wants the operator's real ~/.ssh back - an
+# empty HOME would silently downgrade hostkey checking to "host not in
+# known_hosts, warn and continue". $REAL_HOME is captured in TestRepo's BEGIN
+# block before the redirect, so it is the operator's actual home.
+#
+# Handing HOME back cannot undo the config isolation: the config no longer
+# follows HOME at all. TestRepo pins libgit2's system / global / xdg search
+# paths with Git::Native->set_config_search_path, which is process-global and
+# indifferent to $ENV{HOME} (t/69-config-isolation.t).
 $ENV{HOME} = $TestRepo::REAL_HOME if defined $TestRepo::REAL_HOME;
 
 my $tmp = Path::Tiny->tempdir;

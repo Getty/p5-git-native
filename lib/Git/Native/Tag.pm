@@ -38,4 +38,37 @@ Wraps a libgit2 annotated tag object. Lightweight tags are plain refs
 under C<refs/tags/*> and don't get a Tag wrapper - look them up with
 L<Git::Native::Repository/reference> instead.
 
+Everything in this class is therefore B<annotated-tag only>: a lightweight
+tag has no tag object to carry a name, a message or a tagger.
+L<Git::Native::Repository/tag> returns C<undef> for one rather than dying,
+so a C<undef> result means "no annotated tag under that name", not "no
+such tag" — L<Git::Native::Repository/tag_names> lists both kinds. A Tag
+keeps its repository alive for as long as it is in scope.
+
+=method name
+
+  say $tag->name;   # 'v1.0.0'
+
+The tag's short name, without the C<refs/tags/> prefix.
+
+=method message
+
+  print $tag->message;
+
+The tagger's message, as stored — including the trailing newline, and the
+PGP signature block for a signed tag.
+
+=method target_id
+
+  say $tag->target_id;
+
+The L<Git::Native::Oid> of the object the tag points at, usually a commit.
+This is one step of peeling: the tag's own OID (the one
+C<refs/tags/v1.0.0> resolves to) is a different object, and a tag pointing
+at another tag needs another step.
+
+=seealso
+
+L<Git::Native::Repository>, L<Git::Native::Reference>
+
 =cut

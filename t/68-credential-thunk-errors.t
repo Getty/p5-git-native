@@ -80,11 +80,32 @@ subtest 'the recorded update survives the eval wrapper' => sub {
   is $closure->( 'refs/remotes/origin/topic', $zero, $new, 0 ), 0,
     'a brand-new ref returns 0 too';
 
+  # libgit2 uses the all-zero oid as a sentinel on BOTH sides of update_tips:
+  # as the old tip it means "did not exist here before", as the new tip it
+  # means "the ref was deleted" (what fetch --prune reports for a stale mirror
+  # ref). Both are normalised to undef, so `to` reads as "where it points now"
+  # and its absence as "it is gone" - never as a ref that moved to the zero
+  # oid. The end-to-end proof over file:// is t/49-remote-callbacks.t 4b; this
+  # pins the same meaning at the thunk, with no remote involved.
+  is $closure->( 'refs/remotes/origin/gone', $old, $zero, 0 ), 0,
+    'a deleted ref returns 0 as well - a deletion is a normal report, not an '
+    . 'error the fetch should be aborted over';
+
   is \@updated, [
-    { ref => $REFNAME, from => $HEX_OLD, to => $HEX_NEW },
-    { ref => 'refs/remotes/origin/topic', from => undef, to => $HEX_NEW },
-  ], 'both updates are recorded, and the all-zero old oid becomes from => undef '
-   . 'so callers can tell a new ref from a moved one without a magic constant';
+    { ref => $REFNAME, from => $HEX_OLD, to => $HEX_NEW, reason => '' },
+    { ref => 'refs/remotes/origin/topic', from => undef, to => $HEX_NEW, reason => '' },
+    { ref => 'refs/remotes/origin/gone', from => $HEX_OLD, to => undef, reason => '' },
+  ], 'all three updates are recorded with the same four keys, and each all-zero '
+   . 'oid becomes undef: from => undef is a ref that did not exist yet, '
+   . 'to => undef is a ref that was deleted - both readable without a magic constant';
+
+  is [ map { $_->{to} } @updated ], [ $HEX_NEW, $HEX_NEW, undef ],
+    'the deleted ref is reported as having no target at all, NOT as pointing '
+   . 'at the 40-zero oid - that distinction is the whole point of the sentinel';
+
+  is [ map { $_->{reason} } @updated ], [ '', '', '' ],
+    'reason is "" on every fetch update, so a caller can test reason without '
+   . 'knowing whether the Result came from a fetch or a push';
 };
 
 done_testing;

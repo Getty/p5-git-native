@@ -2,7 +2,6 @@
 
 package Git::Native::Blob;
 use Moo;
-use FFI::Platypus 2.00;
 use Git::Libgit2::FFI ();
 use Git::Native::Oid ();
 
@@ -27,8 +26,7 @@ sub content {
   my $ptr  = Git::Libgit2::FFI::git_blob_rawcontent( $self->_handle );
   my $size = $self->size;
   return '' unless $ptr && $size > 0;
-  my $ffi = FFI::Platypus->new( api => 2 );
-  return $ffi->cast( 'opaque', "string($size)", $ptr );
+  return Git::Libgit2::FFI::ffi()->cast( 'opaque', "string($size)", $ptr );
 }
 
 sub DEMOLISH {
@@ -47,6 +45,39 @@ sub DEMOLISH {
 =description
 
 A libgit2 blob, exposing C<oid>, C<size>, C<content>. Freed when the
-object goes out of scope.
+object goes out of scope. Obtained from
+L<Git::Native::Repository/blob> or L<Git::Native::Repository/object>; the
+blob keeps its repository alive for as long as it is itself in scope.
+
+Blobs are created from a Perl scalar with
+L<Git::Native::Repository/blob_create_frombuffer>, which returns the OID
+rather than a Blob.
+
+=attr oid
+
+  say $blob->oid;   # full hex
+
+The blob's L<Git::Native::Oid>. Computed on first use from the object
+handle.
+
+=method size
+
+  say $blob->size;   # 6
+
+Size of the blob content in bytes.
+
+=method content
+
+  my $bytes = $blob->content;
+
+The raw blob content as a byte string, copied out of libgit2's buffer, so
+it stays valid after the Blob goes away. Binary-safe: NUL bytes and
+non-UTF-8 data survive unchanged, and nothing is decoded — a text file
+comes back as bytes, not characters. An empty blob yields the empty
+string.
+
+=seealso
+
+L<Git::Native::Repository>, L<Git::Native::Tree>, L<Git::Native::Oid>
 
 =cut

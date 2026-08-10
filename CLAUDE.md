@@ -12,6 +12,9 @@ consumers see. Name contrasts deliberately with `Git::Wrapper` and
 
 ```
 Git::Native               ->open / ->init($path, bare =>?, initial_branch =>?) / ->clone($url, $path)
+                          ->reference_name_is_valid($name)
+                          ->set_config_search_path(system|global|xdg|programdata => $dir)
+                            process-global libgit2 option, not per-repository
 
 Git::Native::Repository   workdir, gitdir, is_bare
                           ->config / ->config_snapshot / ->config_string($k) / ->config_bool($k)
@@ -33,6 +36,7 @@ Git::Native::Repository   workdir, gitdir, is_bare
                           ->commit_create(tree =>, parents =>, message =>, ...)
                           ->blob_create_frombuffer($scalar)
                           ->object($oid), ->tree($oid), ->tree_builder
+                          ->object_by_prefix($short_hex)   (4..40 chars, git rev-parse)
                           DESTROY: git_repository_free
 
 Git::Native::Reference    name, shorthand, target -> Oid, symbolic_target, is_symbolic
@@ -69,7 +73,8 @@ Git::Native::Oid          stringify hex, ->raw (20B), ->short(7)
 Git::Native::Error        isa Throwable::Error; code, klass, message
                           is_not_found / is_exists / is_auth / is_certificate /
                           is_conflict / is_not_fast_forward / is_unborn_branch / is_invalid_spec
-                          is_not_matched / is_locked / is_bare_repo
+                          is_not_matched / is_locked / is_bare_repo / is_ambiguous
+                          is_owner_mismatch
                           check_rc (exported) wraps Git::Libgit2::Error
 ```
 
@@ -96,6 +101,28 @@ or compare `->code` against the `GIT_E*` constants exported by `Git::Libgit2`.
 `klass` (the `git_error_t` category) is decoded by `Git::Libgit2 0.005`
 and is a secondary signal, not the primary discriminator.
 
+Not every failure arrives as a `Git::Native::Error`. Argument checks that
+never reach libgit2 `croak` instead, deliberately: `Oid->from_hex` /
+`from_raw`, `Repository->object_by_prefix` (too-short prefix),
+`Repository->commit_create` (missing `tree` / `message`). The rule is that a
+`->code` is only ever a code libgit2 actually returned — inventing one would
+make `is_invalid_spec` ambiguous between "your refname is bad" and "your OID
+string is bad" within a single call. `Oid` sets `@CARP_NOT` so the croak
+blames the caller's line rather than a line inside the distribution.
+
+**The ownership check does not surface as `GIT_EOWNER` by default.** libgit2
+validates that the repository's worktree is owned by the current user
+(CVE-2022-24765 analogue). Measured on 1.5.1: with a non-matching
+`safe.directory` entry `open` fails `GIT_EOWNER` (-36, `is_owner_mismatch`),
+but with **no `safe.directory` entry at all** — the normal state — libgit2
+asks the config for the multivar, gets `GIT_ENOTFOUND` back and returns
+*that*. So the CI/container case reports a not-found naming a config key the
+user never set, and `is_not_found` answers, not `is_owner_mismatch`. Also on
+1.5.1: `safe.directory = *` is not honoured. Pinned in `t/72-owner-mismatch.t`,
+which reproduces a real `GIT_EOWNER` unprivileged by pointing `core.worktree`
+at a root-owned system directory — user namespaces cannot do it, an
+unprivileged namespace may map only your own uid.
+
 ## Phase 4 - Network + Auth
 
 `Git::Native::Remote` is the hard layer. Two libgit2 quirks worth knowing:
@@ -105,11 +132,15 @@ and is a secondary signal, not the primary discriminator.
   patterns client-side via `_owner->reference_names(glob => ...)` and emits
   one concrete refspec per matching local ref. Fetch is unaffected (server
   side enumerates).
-- **No native `--prune` on push.** Implemented by `_connect(DIRECTION_PUSH)`
-  + `git_remote_ls` + diffing remote heads against the expanded local set,
-  then prepending `:refs/...` delete refspecs to the push call. `_connect`
-  uses the credential callback too, so prune works against authenticated
-  remotes.
+- **No native `--prune` on push.** Implemented by `_connect` + `git_remote_ls`
+  + diffing remote heads against the expanded local set, then prepending
+  `:refs/...` delete refspecs to the push call. `_connect` uses the credential
+  callback too, so prune works against authenticated remotes. It connects with
+  `GIT_DIRECTION_FETCH` even on the push path (`Remote.pm:178`, the only
+  `_connect` call site): `git_remote_ls` needs the ref advertisement, which is
+  what upload-pack serves. `GIT_DIRECTION_PUSH` is imported but unused. The
+  distinction would only matter against a remote granting write without read
+  (karr ticket 23).
 
 The credential callback (`git_credential_acquire_cb`) is a
 `FFI::Platypus::Closure`. The C signature has a `git_credential **out`
@@ -134,36 +165,50 @@ are stable across 1.5 -> 1.9.
 ## Test Hygiene
 
 `t/lib/TestRepo.pm` keeps the user's git config out of the suite (the exact
-bug Git::Raw shipped). It takes two mechanisms, because the obvious one only
-covers half:
+bug Git::Raw shipped). It takes three mechanisms, because each one reaches
+somewhere the others do not:
 
 - `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null` reaches the
-  **git CLI** that fixtures shell out to. libgit2 1.5 does not know those
-  variables at all, nor `GIT_CONFIG_NOSYSTEM`.
-- A `BEGIN` block redirects **`HOME` and `XDG_CONFIG_HOME`** to a throwaway
-  directory. That is what isolates libgit2, which guesses its config search
-  path from `HOME` **once**, during `git_libgit2_init`.
+  **git CLI** that fixtures shell out to. libgit2 does not know those
+  variables at all, nor `GIT_CONFIG_NOSYSTEM` (all three measured, no effect).
+- `Git::Native->set_config_search_path(system => …, programdata => …,
+  global => …, xdg => …)` isolates **libgit2 itself**, including the system
+  level: `/etc/gitconfig` is compiled in and no environment variable moves it,
+  so `git_libgit2_opts(GIT_OPT_SET_SEARCH_PATH)` is the only supported
+  override. Needs `Git::Libgit2 0.006` (karr ticket 13).
+- The **`HOME` / `XDG_CONFIG_HOME`** redirect in the `BEGIN` block. No longer
+  what isolates the config — the search path does that, verified with `HOME`
+  left alone. It stays for the *non*-config things a home directory carries:
+  `~/.ssh/known_hosts`, which `Git::Native::Remote` verifies hostkeys against,
+  and the default key paths in `Git::Native::Credential`. The global/XDG
+  search paths point into the same throwaway `HOME`, so "drop a `.gitconfig`
+  into `$TestRepo::HOME`" keeps meaning what it did.
 
-The `BEGIN` is load-bearing: `use Git::Native` pulls in
-`Git::Native::Credential`, which calls `init_lib()` at load time, so libgit2
-is already initialised by the time the module body runs — assigning
-`$ENV{HOME}` after the `use` provably changes nothing. `TestRepo.pm`
-therefore refuses to load if `Git::Libgit2` is already in `%INC`; **always
-`use TestRepo;` before `use Git::Native;`**.
+Load order still matters, for a different reason than before: the search path
+is process-global and applies only to repositories opened **after** it is set
+— an already-open repository keeps the config it resolved at open time
+(measured). `TestRepo.pm` therefore still refuses to load if `Git::Libgit2` is
+already in `%INC`; **always `use TestRepo;` before `use Git::Native;`**.
+(The old reason — libgit2 guesses its `HOME`-derived search path once, inside
+`git_libgit2_init`, which `use Git::Native` triggers via
+`Git::Native::Credential` — is still true, and is why `HOME` alone could never
+have covered the system level.)
 
-Isolated: global + XDG. **Not** isolated: the repository level (tests set
-`user.name`/`user.email` on the repo they just created and must keep seeing
-them — `t/67-signature.t` relies on this), and the system level
-`/etc/gitconfig` — libgit2 hardcodes that path and the supported override,
-`git_libgit2_opts(GIT_OPT_SET_SEARCH_PATH)`, is not bound by
-`Git::Libgit2 0.005` (karr ticket 13).
+Isolated: system + programdata + global + XDG. **Not** isolated, on purpose:
+the repository level — tests set `user.name`/`user.email` on the repo they
+just created and must keep seeing them (`t/67-signature.t` relies on this).
 
-`t/69-config-isolation.t` is the regression test, with a control group: it
-also asserts that a probe config *is* read when it should be, so it can't
-pass by isolating nothing. Against the old fixture, 4 of its 6 subtests fail.
+`t/69-config-isolation.t` is the regression test, with a control group at both
+levels: it also asserts that a probe config *is* read when it should be, so it
+can't pass by isolating nothing. Two of its nine subtests fail if the
+`set_config_search_path` call is removed from the fixture; four fail against
+the pre-karr-9 fixture.
+
 `t/40-remote-ssh.t` restores `$TestRepo::REAL_HOME` — the live SSH path needs
 the operator's real `~/.ssh/known_hosts`, and an empty `HOME` would silently
-downgrade hostkey verification to "unknown host, warn and continue".
+downgrade hostkey verification to "unknown host, warn and continue". That is
+unaffected by the search path: config no longer follows `HOME` at all, so
+handing `HOME` back cannot undo the isolation.
 
 `t/20-remote-local.t` covers the Phase 4 surface end-to-end with two
 working repos linked through a bare repo over `file://` — wildcard push,
@@ -217,6 +262,42 @@ and `tag()` which throw not-found.
 and was returning placeholder attributes, the credential thunk let a `die`
 escape into libgit2's C frames, and the config isolation above did not work.
 
+`t/70-commit-create-args.t` pins the Perl-side argument guards on
+`commit_create` — missing/undef `tree` or `message`, and a non-arrayref
+`parents` — each asserting the croak names the method *and* the argument, and
+that it is a plain croak rather than a `Git::Native::Error` (libgit2 would
+otherwise answer a missing `message` with an opaque `invalid argument:
+'string'`).
+
+`t/71-object-prefix.t` covers `object_by_prefix`. Two things there are load-
+bearing rather than decorative: an odd prefix length (5) catches a
+byte-instead-of-nibble reading of the length argument, and the ambiguity case
+builds a **real** SHA1 collision — blobs `"blob $i\n"` until two share their
+first 4 hex characters (261 of them, deterministic because the content is
+fixed) — instead of feeding `is_ambiguous` a synthetic code.
+
+`t/72-owner-mismatch.t` reproduces a real `GIT_EOWNER` without privileges (see
+Error Handling above) and uses `safe.directory` as its control group: same
+repo, same uid, one config line different — so the first block provably
+measures the ownership check and not some unrelated open failure. The
+no-entry case is asserted as a `-36`/`-3` disjunction with a `note`, so a
+libgit2 that fixes the quirk does not turn the file red.
+
+`t/73-oid-invalid-input.t` pins that the `Oid|hex` convenience croaks rather
+than throwing, across all 14 wrappers that accept it. Its load-bearing block
+calls `reference_create` twice — once with a bad refname (a real
+`GIT_EINVALIDSPEC`, so `is_invalid_spec` is true) and once with a bad OID (a
+croak) — and asserts the two stay distinguishable. That is the whole argument
+for not throwing, made falsifiable.
+
+`t/51-error-predicates.t`'s matrix now covers all 13 curated predicates, plus
+a symbol-table oracle that goes red if a predicate is added to `Error.pm` and
+forgotten here. It previously excluded `is_bare_repo` on the grounds that the
+real-failure pin in `t/46` says more; that exclusion is reversed on purpose.
+The two assertions are different: the real-failure pins (`t/46`, `t/71`,
+`t/72`) say which code libgit2 returns for a given situation, the matrix says
+each predicate is wired to exactly one code.
+
 Known gap, deliberate: the `DEMOLISH` `if $self->{_handle}` false branch in
 every wrapper is unreachable while `_handle` is `required => 1` — that is
 most of the remaining branch misses.
@@ -240,6 +321,13 @@ Past karr's MVP. Quirks:
   `git_diff_file` layout, which grew an extra field in 1.7.
 - **`tag_names()` walks a `git_strarray` via `unpack`** (16 bytes:
   pointer + count). Stable layout since 1.0.
+- **`object_by_prefix` passes the prefix length in hex characters, not
+  bytes.** `git_object_lookup_prefix` takes a full-width `git_oid` buffer
+  (the prefix zero-padded to 40) plus a nibble count. It also answers a
+  prefix shorter than `GIT_OID_MINPREFIXLEN` (4) with `GIT_EAMBIGUOUS` —
+  the same code a real ambiguity returns — so the wrapper croaks on a
+  too-short prefix before the FFI call and `is_ambiguous` keeps one
+  meaning. Needs `Git::Libgit2 0.006` (0.005 has no binding).
 
 ## Delegation
 

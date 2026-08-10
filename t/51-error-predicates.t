@@ -3,7 +3,7 @@ use Git::Libgit2 qw(
   init_lib
   GIT_ENOTFOUND GIT_EEXISTS GIT_EAUTH GIT_ECERTIFICATE GIT_ECONFLICT
   GIT_ENONFASTFORWARD GIT_EUNBORNBRANCH GIT_EINVALIDSPEC GIT_EMODIFIED
-  GIT_ELOCKED
+  GIT_ELOCKED GIT_EBAREREPO GIT_EAMBIGUOUS GIT_EOWNER
 );
 use Git::Native::Error qw( check_rc );
 
@@ -17,9 +17,19 @@ use Git::Native::Error qw( check_rc );
 # code, so a mis-wired constant (is_auth comparing GIT_ECERTIFICATE, say)
 # would have shipped silently.
 #
-# is_bare_repo is deliberately NOT listed here: it is pinned in
-# t/46-error-paths.t against a real GIT_EBAREREPO failure from status() on a
-# bare repository, which is a stronger assertion than a synthetic code.
+# The table below is the COMPLETE matrix over the curated predicates, and has
+# to stay complete: a predicate added to Git::Native::Error and not added here
+# is the one case this file exists to catch. Three of them are additionally
+# pinned against a real libgit2 failure - is_bare_repo in t/46-error-paths.t
+# (status() on a bare repository), is_ambiguous in t/71-object-prefix.t
+# (colliding OID prefixes), is_owner_mismatch in t/72-owner-mismatch.t (a
+# working directory owned by another uid). Those pins are complementary, not a
+# substitute: they assert which code libgit2 really produces for a situation,
+# this file asserts that each predicate is wired to exactly one code and to
+# nobody else's. is_bare_repo used to be left out here on the grounds that its
+# real-failure pin was the stronger assertion; it is back, because the two
+# assertions are about different things and the hole showed up as soon as a
+# fourth predicate had to decide which side it belonged on.
 
 init_lib();
 
@@ -36,7 +46,21 @@ my %code_for = (
   is_invalid_spec     => GIT_EINVALIDSPEC,
   is_not_matched      => GIT_EMODIFIED,
   is_locked           => GIT_ELOCKED,
+  is_bare_repo        => GIT_EBAREREPO,
+  is_ambiguous        => GIT_EAMBIGUOUS,
+  is_owner_mismatch   => GIT_EOWNER,
 );
+
+# The table is only an oracle while it covers everything Git::Native::Error
+# offers. Derived from the symbol table so a new predicate cannot be added to
+# the module and quietly skipped here.
+{
+  no strict 'refs';
+  my @curated = sort grep { /\Ais_/ && defined &{"Git::Native::Error::$_"} }
+    keys %{'Git::Native::Error::'};
+  is [ sort keys %code_for ], \@curated,
+    'every is_* predicate on Git::Native::Error is covered by this table';
+}
 
 my @predicates = sort keys %code_for;
 

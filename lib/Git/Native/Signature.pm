@@ -82,11 +82,40 @@ sub DEMOLISH {
 A Git signature (name + email + timestamp). Wraps C<git_signature*>;
 freed automatically when the object goes out of scope.
 
-=method from_handle($ptr)
+Pass one as C<author> or C<committer> to
+L<Git::Native::Repository/commit_create>, or let that method fall back to
+L<Git::Native::Repository/signature_default>, which reads C<user.name> and
+C<user.email> from the repository config.
+
+=attr name
+
+The human name, e.g. C<'Ada Lovelace'>. Required.
+
+=attr email
+
+The email address, without angle brackets. Required.
+
+=attr when
+
+Timestamp in Unix epoch seconds. Leave it unset and the signature is
+stamped with the current time when its libgit2 handle is first built.
+
+=attr offset
+
+Timezone offset in B<minutes> east of UTC (C<120> for C<+0200>), default
+C<0>. Recorded for display only — C<when> is an absolute epoch either way.
+
+=method from_handle
+
+  my $sig = Git::Native::Signature->from_handle($ptr);
 
 Wraps a C<git_signature*> that libgit2 allocated (as
 L<Git::Native::Repository/signature_default> does) and takes ownership of
 it. C<name>, C<email>, C<when> and C<offset> are read out of the C struct
 and copied into Perl, so they stay valid after the handle is freed.
+
+=seealso
+
+L<Git::Native::Repository>, L<Git::Native::Commit>
 
 =cut
