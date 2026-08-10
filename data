@@ -1,0 +1,78 @@
+---
+claimed_at: 2026-08-10T23:16:13Z
+claimed_by: opus-main
+class: standard
+completed: 2026-08-10
+created: 2026-08-10T21:23:15Z
+id: 24
+priority: medium
+started: 2026-08-10
+status: done
+tags:
+- api
+- index
+- upstream
+title: Repository has no index API, so 'is anything under this path tracked?' cannot
+  be answered natively
+updated: 2026-08-10T23:33:41Z
+---
+
+Requested by App::karr (its board, ticket #107). Blocked by Git::Libgit2
+ticket #9, which attaches the one missing FFI function.
+
+Git::Native::Repository exposes 44 methods and not one of them reaches the
+index -- the word appears in the whole file exactly once, in a POD sentence
+about GIT_STATUS_*. Verified against the installed 0.005, not inferred from
+the changelog.
+
+What the consumer needs: given a repository and a path, answer "is anything
+under this tracked?" for a file and a directory alike. karr asks this in
+App::karr::Git::is_tracked_under, which decides whether a project owns the
+tasks/ view paths before karr writes .gitignore entries or materializes into
+them. Today it shells out to `git ls-files -z`, unconditionally, which
+contradicts the documented architecture (local operations native, git CLI
+only as the remote-transport fallback) and degrades to "unowned" with git off
+PATH.
+
+Shape, deliberately left open where it should be:
+
+- A Repository->index accessor returning an index object, freed via
+  git_index_free in DEMOLISH the way every other wrapper here handles its
+  libgit2 handle. git_repository_index is already attached in Git::Libgit2.
+- On that object, at minimum the prefix question. Whether it is a full
+  Git::Native::Index class alongside Tree / TreeBuilder or something smaller
+  is a design call for whoever picks this up -- the consumer needs one
+  question answered, not a complete index facade, and this dist has no other
+  caller for add/remove/write yet.
+
+Two things that will bite whoever implements it, both worth a test:
+
+- git_index_find_prefix matches a STRING prefix, not a path. "tasks" also
+  matches "tasksfoo.txt". Either the wrapper takes the trailing slash from
+  the caller and documents that, or it appends one for a directory question
+  and documents THAT -- but the two must not be silently conflated.
+- A git_index handle held across a foreign write goes stale. If the accessor
+  caches the object, decide explicitly whether it re-reads (git_index_read,
+  already attached) or whether the caller owns that. A cached, unrefreshed
+  index answering "not tracked" for a file another process just added is the
+  failure mode this would ship.
+
+Not urgent for karr: the CLI path works, and materialize keeps its refusal on
+the libgit2 is_tracked check, so nothing can be overwritten. This closes an
+architecture gap, not a data-loss path.
+Umgesetzt: Git::Native::Index (read-only) + Repository->index. Surface: entrycount, find, find_prefix, has_path, has_prefix, is_tracked_under, reload. Beide Ticket-Fallen adressiert: (1) find_prefix/has_prefix sind explizit ein STRING-Prefix ('tasks' matcht 'tasksfoo.txt'), is_tracked_under ist die Pfad-Frage (trailing slash strippen, dann exakter Entry ODER Prefix auf "$path/") und damit identisch zu 'git ls-files -- $path'. (2) Staleness: libgit2 cached das git_index* im Repository und gibt bei jedem git_repository_index dasselbe Objekt zurueck, deshalb ruft der Accessor git_index_read(idx,0) und cached Perl-seitig nicht; ein festgehaltenes Objekt hat in KEINE Richtung eine Garantie (kein Selbst-Refresh, aber auch kein Snapshot) - so dokumentiert, ->reload ist der explizite Refresh. Tests: t/74-index.t (12 Subtests) + t/00-load.t. Tragend darin: der Working-Tree kann die Frage nachweislich nicht beantworten (status_for_path auf ein Verzeichnis wirft -5/is_ambiguous, ->status eines frischen Clones ist {} waehrend der Index 3 Pfade haelt), 'getrackt aber von Platte geloescht' bleibt true, und die Prefix-Falle. Entfernt man das git_index_read aus dem Accessor, gehen genau 2 Assertions rot (nachgemessen). dzil test: 51 Dateien, 540 Tests, PASS; t/40+t/41 skippen ohne Env-Vars, t/release-changes_has_content ist release-only. dzil install ist durch, die installierte Version beantwortet die karr-Frage im Smoke-Test korrekt. Offen: nichts committet, Review des Diffs steht aus. Consumer-seitig kann App::karr::Git::is_tracked_under jetzt vom 'git ls-files -z'-Shellout auf $repo->index->is_tracked_under($rel) umgestellt werden (karr #107) - Git::Native muss dafuer aber erst released sein.
+Review durch den Haupt-Agenten, mit eigenen Messungen statt Abnahme der Worker-Berichte:
+
+(1) Differentialtest gegen die Referenz. 19 Pfade gegen echtes 'git ls-files -z -- $p' im selben Repo: tasks/task/tasks//tasks//, verschachteltes a/b, Datei mit Leerzeichen, Umlaut-Dateiname, Datei namens '0' (Truthiness-Falle - has_path nutzt 'defined', also korrekt), READM vs README, tasks/1 als Teilsegment. Null Divergenzen. Die POD-Behauptung 'die gleiche Antwort wie git ls-files -- $path' ist damit gemessen, nicht nur behauptet.
+
+(2) Frisches 'git init' ohne .git/index: ->index wirft nicht, entrycount 0, find undef. Das war ein echtes Risiko (git_index_read auf eine nicht existierende Datei) und ist keins.
+
+(3) Speicher: 20000 Accessor-Aufrufe, RSS-Delta 0 kB. Zwei Index-Objekte gleichzeitig, eines ueberlebt 'undef $repo', sauberer Exit ohne Double-Free bei der globalen Destruktion. Das Refcount-Pairing git_repository_index/git_index_free stimmt.
+
+(4) Coverage nur aus t/74-index.t: Index.pm stmt 100%, cond 100%, sub 100%, bran 95%. Der einzige nicht abgedeckte Zweig ist 'if $self->{_handle}' in DEMOLISH - der bekannte, in CLAUDE.md dokumentierte dist-weite Gap (unerreichbar solange _handle required => 1).
+
+(5) Ticket-Anforderungen einzeln: Accessor mit git_index_free in DEMOLISH erfuellt; Prefix-Frage erfuellt; 'die zwei duerfen nicht stillschweigend zusammenfallen' erfuellt (getrennte Methoden, getrennte POD, Testfixture trackt tasks/1.md UND tasksfoo.txt, sonst wuerde der Test nichts messen); 'entscheide explizit ob neu gelesen wird' entschieden und begruendet.
+
+Kein Befund, der den Ticket-Scope betrifft. Bewusst nicht drin, wie im Ticket vorgesehen: add/remove/write. Nicht testbar und daher offen: der non-ENOTFOUND-Fehlerpfad in find/find_prefix (korrupter Index laesst sich nicht sinnvoll fabrizieren).
+
+Committet als 9469d62. dzil test 51/540 PASS, dzil install durch, Smoke-Test gegen die installierte Version gruen.
