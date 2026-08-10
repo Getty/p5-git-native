@@ -1,0 +1,129 @@
+---
+class: standard
+completed: 2026-08-10
+created: 2026-08-10T20:30:36Z
+id: 22
+priority: low
+status: done
+tags:
+- error-handling
+- docs
+title: GIT_EOWNER-Doku ausserhalb Error.pm nachziehen + t/51-Matrix-Entscheidung bestaetigen
+updated: 2026-08-10T20:41:15Z
+---
+
+Nachlauf zu #7 und #17. Beides bewusst NICHT im selben Change gemacht: die
+Dateien liegen ausserhalb der Lane, die der Task fuer #7/#17 abgesteckt hat.
+
+1. Git::Native.pm -> open / open_ext: die POD erwaehnt den Ownership-Check
+   nicht. Fuer CI-/Container-Nutzer ist er der haeufigste open-Fehler, und die
+   Erklaerung steht derzeit nur bei Git::Native::Error/is_owner_mismatch. Ein
+   Querverweis von open() dorthin gehoert dazu - inklusive des 1.5.1-Quirks,
+   dass ohne jeden safe.directory-Eintrag stattdessen GIT_ENOTFOUND ankommt
+   ('config value 'safe.directory' was not found'), also is_not_found statt
+   is_owner_mismatch antwortet. Wer den Fehler googelt, landet sonst bei einem
+   Config-Schluessel, den er nie gesetzt hat.
+
+2. CLAUDE.md: die Quirk-Liste kennt den safe.directory-Fall noch nicht, und
+   der Test-Hygiene-Abschnitt zaehlt t/72-owner-mismatch.t und
+   t/73-oid-invalid-input.t nicht auf. Beides Orchestrator-Territorium.
+
+3. Zur Bestaetigung, weil es eine fruehere Entscheidung umdreht: t/51 hatte
+   is_bare_repo mit ausdruecklicher Begruendung NICHT in der Predicate-Matrix
+   ('der Real-Failure-Pin in t/46 ist die staerkere Aussage'), is_ambiguous
+   fehlte ohne Begruendung. Mit is_owner_mismatch stand die Frage zum vierten
+   Mal an. Entschieden: die Matrix ist jetzt vollstaendig ueber alle 13
+   kuratierten Predicates, plus ein Symboltabellen-Check, der einen kuenftig
+   vergessenen Eintrag rot macht (mutationsgeprueft). Die Real-Failure-Pins in
+   t/46 / t/71 / t/72 bleiben - sie sagen, WELCHEN Code libgit2 fuer eine Lage
+   wirklich liefert, die Matrix sagt, dass jedes Predicate an genau einen Code
+   verdrahtet ist. Zwei verschiedene Aussagen, keine ersetzt die andere.
+   Falls der Maintainer die alte Trennung bevorzugt: hier revidieren, nicht
+   still zurueckdrehen.
+
+Lane: main agent (CLAUDE.md) bzw. git-native-phase5-worker (Git::Native.pm).
+Punkt 1 erledigt (git-native-phase5-worker). Nur lib/Git/Native.pm, nur POD - kein
+Code, kein Commit, kein Changes-Eintrag. Punkt 2 (CLAUDE.md) und Punkt 3 unberuehrt.
+
+=method open bekommt zwei Absaetze hinter den bestehenden Einzeiler:
+
+  Opening can fail on ownership rather than on anything about the repository:
+  libgit2 carries git's dubious-ownership check and refuses a path owned by
+  another uid unless it is listed in C<safe.directory>. Containers and CI hit
+  this when an image is baked as root and then used as an unprivileged user -
+  see C<is_owner_mismatch> in L<Git::Native::Error>.
+
+  On libgit2 1.5.1 that failure does not identify itself. With no
+  C<safe.directory> entry anywhere, which is the usual state, the open dies with
+  C<GIT_ENOTFOUND> and C<config value 'safe.directory' was not found> - a
+  not-found naming a key that was never set, and C<is_not_found> is the
+  predicate that answers, not C<is_owner_mismatch>. C<safe.directory = *> is not
+  honoured either; the path has to be listed literally.
+
+=method open_ext bekommt einen Satz, damit der Fall dort nicht neu erklaert
+werden muss:
+
+  The ownership check described under C<open> applies here as well, to the
+  repository the walk lands on rather than to C<>.
+
+Der Text ist gegen t/72-owner-mismatch.t und die is_owner_mismatch-Doku in
+lib/Git/Native/Error.pm gegengelesen, nicht gegen die Ticket-Zusammenfassung.
+Alle drei geforderten Punkte stehen drin (Check erwaehnt + Querverweis, der
+Not-Found-Quirk, safe.directory = * unwirksam). Bewusst NICHT wiederholt, was
+in Error.pm steht: die genaue Fehlermeldung 'repository path ... is not owned
+by current user', dass libgit2 den Workdir statet und nicht jede Datei darunter,
+und die Herleitung des Quirks (Config-Lookup auf das Multivar liefert
+GIT_ENOTFOUND und libgit2 gibt DAS zurueck). open() nennt nur die Symptome, die
+beim Suchen sichtbar sind, und zeigt fuer den Rest nach drueben.
+
+EINE ABWEICHUNG von der Vorgabe, bitte gegenlesen: der Querverweis ist
+'C<is_owner_mismatch> in L<Git::Native::Error>' geworden, nicht
+L<Git::Native::Error/is_owner_mismatch>. Grund: den Anker gibt es im gewobenen
+POD nicht. Alle 13 kuratierten Predicates teilen sich EINEN =head2, im Build
+lautet er woertlich
+
+  =head2 is_not_found / is_exists / is_auth / is_certificate / is_conflict / is_not_fast_forward / is_unborn_branch / is_invalid_spec / is_not_matched / is_locked / is_bare_repo / is_ambiguous / is_owner_mismatch
+
+- L<...|/is_owner_mismatch> wuerde also auf ein totes Fragment zeigen und oben
+auf der Error-Seite landen. Dazu kommt: die Distribution referenziert Error
+ueberall so (C<is_not_found> ... L<Git::Native::Error> in Repository.pm, Oid.pm,
+Config.pm, Branch.pm, Remote.pm, Credential.pm) - meine Zeile waere die einzige
+Sektions-Referenz auf das Modul gewesen. Falls der Anker gewuenscht ist, waere
+die Alternative, die Predicate-Doku in Error.pm in einzelne =method-Bloecke zu
+zerlegen; das ist Error.pm-Lane und ein eigener Change.
+
+Verifikation:
+- prove -lr t/ = 48 Dateien / 510 Tests / PASS (t/40-remote-ssh.t und
+  t/41-remote-https.t skippen mangels TEST_GIT_NATIVE_*_URL - kein anderer Skip)
+- dzil build --no-tgz ok; podchecker auf dem gewobenen
+  Git-Native-0.005/lib/Git/Native.pm = 'pod syntax OK', ebenso auf allen 16
+  uebrigen gewobenen Modulen
+- der gewobene Author-Test t/author-pod-syntax.t im Build-Verzeichnis:
+  17 Tests PASS
+- =method open / =method open_ext weben korrekt zu =head2 open / =head2 open_ext
+- dzil clean danach; Build-Verzeichnis nicht liegengelassen
+Punkt 2 (CLAUDE.md) erledigt vom orchestrierenden Agenten: Error-Handling-
+Abschnitt um den safe.directory-Quirk erweitert (inkl. der Kernaussage, dass im
+Normalfall GIT_ENOTFOUND statt GIT_EOWNER ankommt und deshalb is_not_found
+antwortet), Class Layout um is_owner_mismatch, Test-Inventar um t/70 bis t/73
+sowie die t/51-Matrix-Umkehr. Zusaetzlich ein Absatz darueber, welche
+Fehlerpfade bewusst croaken statt zu werfen.
+
+Punkt 3 BESTAETIGT: die vollstaendige Predicate-Matrix in t/51 plus
+Symboltabellen-Orakel ist die richtige Wahl. Begruendung des ausfuehrenden
+Agenten trifft zu - Matrix und Real-Failure-Pins sagen zwei verschiedene Dinge
+("jedes Predicate haengt an genau einem Code" vs. "diesen Code liefert libgit2
+fuer diese Lage"), keine ersetzt die andere. Die alte Ausnahme fuer
+is_bare_repo bleibt damit aufgehoben. In CLAUDE.md ist die Umkehr ausdruecklich
+als solche vermerkt, damit sie nicht spaeter still zurueckgedreht wird.
+
+Punkt 1 (Git/Native.pm open/open_ext POD) vom phase5-worker erledigt.
+
+Eine begruendete Abweichung dort abgenommen: der Querverweis ist
+"C<is_owner_mismatch> in L<Git::Native::Error>" statt
+L<Git::Native::Error/is_owner_mismatch>. Grund: alle 13 Predicates teilen sich
+im gewobenen POD EINEN =head2, der Anker existiert also nicht und die
+Sektionsreferenz waere tot gewesen; ausserdem referenziert die ganze
+Distribution Error einheitlich ohne Sektion. Wer echte Anker will, muesste die
+Predicate-POD in Error.pm in einzelne =method-Bloecke zerlegen - eigener
+Change, eigene Lane, hier bewusst nicht gemacht.
