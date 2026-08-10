@@ -1,0 +1,76 @@
+---
+claimed_at: 2026-08-10T15:58:01Z
+claimed_by: git-native-test-writer
+class: standard
+completed: 2026-08-10
+created: 2026-08-10T15:26:52Z
+id: 3
+priority: high
+started: 2026-08-10
+status: done
+tags:
+- test
+- network
+- remote
+title: 't/20: PASSTHROUGH-Credential-Pfad wird nicht getestet'
+updated: 2026-08-10T16:24:21Z
+---
+
+Verifiziert: bei einem file:// fetch ruft libgit2 den registrierten
+credential-Callback NULL mal auf (instrumentiert, called == 0).
+
+Damit ist t/20-remote-local.t:63-69 hohl:
+  # needed (file:// requires no auth - libgit2 still asks if registered).
+  ... credentials => sub { undef },   # PASSTHROUGH -> falls through
+  ok 1, "fetch with credentials callback (PASSTHROUGH path)";
+Der Kommentar ("libgit2 still asks if registered") stimmt nicht, und das
+ok 1 kann nicht fehlschlagen - Hausregel 7. CLAUDE.md behauptet ebenfalls,
+t/20 decke "the PASSTHROUGH credential path" ab; auch das stimmt nicht.
+
+Folge: der gesamte Credential-Callback-Pfad ist nur ueber t/40/t/41
+erreichbar, die ohne Env-Vars skippen - also praktisch ungetestet. Siehe
+das croak-Ticket, das genau davon abhaengt.
+
+TODO: entweder einen Transport finden, der den Callback ohne Netz
+ausloest (git-daemon lokal? http:// gegen einen Test-Server?), oder den
+Callback-Thunk _make_credential_thunk direkt unit-testen (Closure bauen,
+mit synthetischen Argumenten aufrufen, Rueckgabecode + out-Pointer
+pruefen). Sonst t/20-Assertion ehrlich machen und CLAUDE.md korrigieren.
+
+Lane: git-native-network-worker + git-native-test-writer.
+Erledigt in zwei Teilen.
+
+1) t/20-remote-local.t: die hohle Assertion ist weg. Statt 'ok 1' zaehlt jetzt
+   ein Counter im Callback die Aufrufe; der Test loescht refs/karr/test/data in
+   Repo B, fetcht mit registriertem credentials-Callback ueber file:// und
+   asserted (a) cred_calls == 0 und (b) der Ref ist wieder da mit der richtigen
+   OID. Damit kann der Test fehlschlagen, wenn libgit2 seine Semantik aendert
+   ODER wenn der Fetch mit registriertem Callback still nichts mehr tut. Der
+   falsche Kommentar ('libgit2 still asks if registered') ist durch die reale
+   Semantik ersetzt: libgit2 fragt nur, wenn der Transport eine Auth-Challenge
+   meldet.
+
+2) Neuer netzwerkfreier Unit-Test t/52-credential-callback.t fuer
+   Remote::_make_credential_thunk (3 subtests / 14 Assertions):
+   - user-cb gibt undef zurueck -> GIT_PASSTHROUGH (-30, gegen die Konstante
+     aus Git::Libgit2 geprueft, nicht gegen Remote.pms eigene), out-Param
+     bleibt NULL, user-cb bekommt url/username_from_url/allowed_types
+   - echtes Git::Native::Credential -> rc 0, der git_credential* landet per
+     memcpy im out-Param, der Wrapper ist disowned (kein double-free); der
+     Test gibt den Pointer selbst frei, weil libgit2 hier nicht uebernimmt
+   - die im user-cb -> rc -1, out-Param bleibt NULL, genau eine Warnung
+   Das FFI::Platypus::Closure ist ein blessed CODE-Ref und laesst sich direkt
+   aus Perl mit synthetischen Argumenten aufrufen - keine Connection noetig.
+
+BEWUSST NICHT getestet: der Pfad 'user-cb gibt etwas zurueck, das kein
+Git::Native::Credential ist'. Der Carp::croak dafuer liegt ausserhalb des eval
+(Ticket 4) und wuerde aus dem FFI-Closure durch libgit2s C-Frames sterben. Im
+Test steht ein Kommentar an der Stelle, der auf Ticket 4 verweist.
+
+OFFEN fuer die Doku-Lane: CLAUDE.md behauptet weiterhin, t/20 decke 'the
+PASSTHROUGH credential path' ab. Das stimmt jetzt nicht mehr (t/20 pinnt das
+Gegenteil) - der Satz gehoert auf t/52-credential-callback.t umgebogen.
+
+Volle Suite: 41 Dateien, 422 Tests, alles gruen; t/40 und t/41 skippen ohne
+TEST_GIT_NATIVE_SSH_URL / TEST_GIT_NATIVE_HTTPS_URL.
+Committed in b80ecd4.
