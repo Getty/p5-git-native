@@ -1,0 +1,104 @@
+---
+claimed_at: 2026-08-10T19:53:08Z
+claimed_by: git-native-worker
+class: standard
+completed: 2026-08-10
+created: 2026-08-10T15:27:33Z
+id: 6
+priority: low
+status: done
+tags:
+- feature
+- oid
+title: Kurz-OID-Lookup (git_object_lookup_prefix / GIT_EAMBIGUOUS)
+updated: 2026-08-10T20:40:16Z
+---
+
+Git::Native::Oid->from_hex verlangt exakt 40 Hex-Zeichen (Oid.pm:19
+croakt sonst ueber oid_from_hex). Damit gibt es keinen Weg, ein Objekt
+ueber ein Kurz-Praefix zu finden - das, was git rev-parse abc1234 kann.
+
+libgit2 bietet git_object_lookup_prefix; ein mehrdeutiges Praefix kommt
+als GIT_EAMBIGUOUS (-5) zurueck, wofuer es dann auch ein is_ambiguous
+Predicate braeuchte (siehe Ticket 1 / 2 fuer das Muster).
+
+Feature-Gap, kein Bug. Low, bis jemand danach fragt.
+
+Lane: git-native-worker.
+Umgesetzt (git-native-worker). Blockade weg: Git::Libgit2 0.006 (lokal
+installiert, noch NICHT auf CPAN) bindet git_object_lookup_prefix und
+exportiert GIT_OID_MINPREFIXLEN. Der Code setzt 0.006 voraus; cpanfile
+absichtlich NICHT angefasst (zentraler Pin, sobald 0.006 released ist).
+
+API: neue Methode Repository->object_by_prefix($hex), NICHT eine
+Erweiterung von object(). Begruendung: object() nimmt eine vollstaendige
+OID und kann nur not-found scheitern; die Praefix-Aufloesung ist
+repository-relativ und kann zusaetzlich mehrdeutig scheitern. Die
+POD aus Ticket 5 sagt bei Oid->from_hex bereits woertlich, dass
+"resolving a short prefix against a repository is a different
+operation" - die Zeile verweist jetzt auf object_by_prefix. Namensform
+folgt status_for_path (Praeposition). Rueckgabe ist derselbe typisierte
+Wrapper wie bei object(); die gemeinsame Dispatch-Logik liegt jetzt in
+_wrap_object (freigabe des git_object* bei unbekanntem Typ war
+dupliziert-gefaehrlich), _owner => $self wie ueberall.
+
+Laengensemantik: git_object_lookup_prefix will den Praefix im vollen
+20-Byte-git_oid-Puffer plus eine Laenge in HEX-ZEICHEN (Nibbles), nicht
+Bytes. Der Wrapper padded den Praefix mit '0' auf 40 und uebergibt
+length($prefix).
+
+Empirisch gemessen (libgit2 1.5, echtes Repo):
+  len 0..3  -> rc -5 GIT_EAMBIGUOUS "ambiguous lookup - OID prefix is too short"
+  len 4..40 -> rc 0
+  kein Treffer -> rc -3 GIT_ENOTFOUND "no match for prefix (deadbee)"
+  echte Kollision -> rc -5 "ambiguous SHA1 prefix - multiple matches in loose objects"
+
+Daraus die Entscheidung zur Untergrenze: Perl-seitig croaken, nicht
+libgit2 entscheiden lassen. libgit2 liefert fuer "zu kurz" denselben
+Code wie fuer "wirklich mehrdeutig"; is_ambiguous haette damit zwei
+Bedeutungen und der Aufrufer koennte "dein Code ist falsch" nicht von
+"frag den User nach mehr Zeichen" unterscheiden. Zu kurz ist ein
+Aufruferfehler, deterministisch und repository-unabhaengig. Muster wie
+commit_create: Carp::croak vor dem FFI-Call. Ebenso croak bei >40
+Zeichen, nicht-hex und undef. Ein Git::Native::Oid wird akzeptiert
+(stringifiziert auf 40 Zeichen) und verhaelt sich dann wie object().
+
+Error: is_ambiguous ergaenzt, GIT_EAMBIGUOUS aus Git::Libgit2 importiert,
+keine hartkodierte -5, exakt nach dem Muster von is_locked/is_bare_repo.
+
+Tests: t/71-object-prefix.t, 41 Assertions, drei Repos.
+ - Typ-Dispatch ueber Kurzpraefix fuer Blob/Tree/Commit/Tag, volle 40
+   Zeichen, Oid-Objekt, Grossschreibung, _owner-Kette.
+ - ungerade Praefixlaenge (5) - der Test, der eine Byte-statt-Nibble-
+   Lesart faengt.
+ - eigenes Repo mit genau EINEM Objekt fuer die Grenze
+   GIT_OID_MINPREFIXLEN=4, damit "4 Zeichen genuegen" nicht an einer
+   Zufallskollision haengt; dort auch not-found und alle croak-Faelle
+   (0/1/2/3 Zeichen, 41 Zeichen, nicht-hex, undef) inklusive der
+   Zusicherung, dass zu kurz KEIN Git::Native::Error ist.
+ - eigenes Repo fuer die Mehrdeutigkeit: Blobs "blob $i\n" bis zwei
+   sich in den ersten 4 Hex-Zeichen treffen (gemessen 261 Blobs, 0.03s,
+   deterministisch weil der Inhalt fest ist). Dort is_ambiguous == 1
+   plus Exklusivitaets-Sweep gegen alle 11 anderen Praedikate auf einem
+   ECHTEN GIT_EAMBIGUOUS - staerker als die synthetischen Codes in
+   t/51, weshalb is_ambiguous dort bewusst nicht eingetragen wurde
+   (gleiche Begruendung, die t/51 fuer is_bare_repo dokumentiert).
+ - disambiguierender Praefix (gemeinsame Laenge + 1) trifft jeweils das
+   richtige der beiden Objekte.
+Mutationsprobe: length($prefix) -> int(length/2) laesst t/71 sofort
+fallen, der Test kann also fehlschlagen.
+
+POD: =method object_by_prefix in Repository.pm (Fehlerarten als Liste),
+Querverweis von object() und von Oid->from_hex, is_ambiguous in der
+Praedikatsliste von Error.pm plus Absatz zur Zu-kurz-Abgrenzung.
+podchecker auf dem gewobenen Build ist sauber.
+
+CLAUDE.md: Class Layout um object_by_prefix und is_ambiguous ergaenzt,
+ein Quirk-Bullet zur Nibble-Laenge und zur EAMBIGUOUS-Doppeldeutigkeit.
+Test-Hygiene-Absatz bewusst NICHT angefasst - dort arbeitet gerade der
+Agent an Ticket 13; t/71 sollte dort noch nachgetragen werden.
+
+prove -lr t/: 46 Dateien, 493 Tests, alles gruen. Nur t/40-remote-ssh.t
+und t/41-remote-https.t skippen (keine Env-URLs gesetzt). t/68 ist
+gruen. Kein Commit, kein git add, kein Changes-Eintrag, cpanfile
+unberuehrt.
