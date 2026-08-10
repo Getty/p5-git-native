@@ -1,0 +1,36 @@
+---
+claimed_at: 2026-08-10T16:46:50Z
+claimed_by: git-native-worker
+class: standard
+completed: 2026-08-10
+created: 2026-08-10T16:31:53Z
+id: 14
+priority: low
+started: 2026-08-10
+status: done
+tags:
+- cleanup
+title: Toter not-bound-Guard fuer git_reference_create_matching
+updated: 2026-08-10T20:40:37Z
+---
+
+Repository.pm:47-49 croakt "Git::Libgit2 function git_reference_create_matching
+is not bound", wenn Git::Libgit2::FFI->can(...) falsch ist.
+
+Der Guard kann nicht mehr feuern: cpanfile:2 verlangt Git::Libgit2 >= 0.005,
+und 0.005 bindet die Funktion (Changes-Eintrag "Bind git_reference_create_matching
+for compare-and-swap direct reference updates"). Empirisch bestaetigt: mit
+geladenem Git::Native meldet can() "gebunden" und der CAS-Create-Pfad laeuft
+durch.
+
+Achtung beim Aufraeumen: can() auf Git::Libgit2::FFI ist nur aussagekraeftig,
+NACHDEM die attach-Phase gelaufen ist. Ein frisch geladenes Git::Libgit2::FFI
+hat 3 Symbole im Package und meldet fuer JEDE Funktion false - auch fuer
+git_repository_head. Wer den Guard durch eine andere Verfuegbarkeitspruefung
+ersetzen will, laeuft in dieselbe Falle.
+
+Mitzuraeumen: t/50-reference-cas.t:19-27 haelt einen kompletten Zweig fuer den
+nicht-gebunden-Fall vor, inklusive skip_all. Der ist damit auch tot.
+
+Lane: git-native-worker.
+Guard in Repository.pm reference_create ersatzlos entfernt (war Zeile 47-50), plus der dazugehoerige POD-Absatz unter =method reference_create. Empirisch bestaetigt: Git::Libgit2 0.005 attacht git_reference_create_matching unbedingt (FFI.pm:134), cpanfile pinnt >= 0.005; can() auf frisch geladenem Git::Libgit2::FFI meldet fuer JEDE Funktion false (auch git_repository_head), taugt also nicht als Ersatzpruefung. t/50-reference-cas.t: toter Zweig (has_create_matching, like-Test auf die Croak-Message, skip_all) und das nun unnoetige 'use Git::Libgit2::FFI ()' entfernt; CAS-Create-Pfad laeuft unbedingt. Kein Changes-Eintrag, kein Commit.
