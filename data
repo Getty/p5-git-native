@@ -1,0 +1,63 @@
+---
+claimed_at: 2026-08-10T15:36:38Z
+claimed_by: git-native-worker
+class: standard
+completed: 2026-08-10
+created: 2026-08-10T15:26:46Z
+id: 2
+priority: high
+started: 2026-08-10
+status: done
+tags:
+- error
+- pod
+title: 'Error: is_bare_repo predicate (GIT_EBAREREPO) + head() magic numbers'
+updated: 2026-08-10T16:24:16Z
+---
+
+Zwei Auslaeufer des is_locked-Themas (Ticket 1).
+
+1) Kein is_bare_repo Predicate. Verifiziert: status() und status_for_path()
+   auf einem bare repo werfen Git::Native::Error mit code=-8
+   (GIT_EBAREREPO), Message "cannot status. This operation is not allowed
+   against bare repositories." Ein Consumer, der generisch ueber Repos
+   laeuft (manche bare, manche nicht), muss heute -8 numerisch
+   vergleichen - exakt die Falle, die is_locked geschlossen hat.
+   Dazu: die POD von status/status_for_path erwaehnt das nicht (sie
+   existiert gar nicht, siehe eigenes POD-Ticket).
+
+2) Repository.pm:139 vergleicht hardcodierte Zahlen statt Konstanten:
+     return undef if $rc == -9 || $rc == -3;  # GIT_EUNBORNBRANCH / GIT_ENOTFOUND
+   Dieselbe Krankheit, nur intern. GIT_EUNBORNBRANCH/GIT_ENOTFOUND in die
+   use-Liste von Repository.pm und die Zahlen ersetzen.
+
+Lane: git-native-worker.
+Umgesetzt, nicht committet (Commit liegt beim Orchestrator).
+
+A) Error.pm: GIT_EBAREREPO importiert, sub is_bare_repo ergaenzt (exakt
+   analog is_locked), =method-Ueberschrift + Konstantenaufzaehlung erweitert,
+   plus ein kurzer Absatz warum status/status_for_path -8 werfen.
+
+B) Repository.pm: alle nackten libgit2-Rueckgabecodes ersetzt -
+   head() -9/-3 -> GIT_EUNBORNBRANCH/GIT_ENOTFOUND (Zeile 140),
+   reference_names + branches -31 -> GIT_ITEROVER (127 / 414),
+   tag_create -2 -> GIT_OBJECT_ANY (449, Konstante war schon importiert und
+   wurde 220 Zeilen weiter oben bereits benutzt - reine Inkonsistenz).
+   Alle Werte per perl -MGit::Libgit2 gegengeprueft. Kein Verhaltenswechsel.
+
+t/46-error-paths.t: is_bare_repo positiv/negativ synthetisch, Schleife ueber
+   alle 10 anderen Praedikate als Gegenprobe, und der ECHTE Pfad -
+   init(bare=>1) + ->status bzw. ->status_for_path werfen Git::Native::Error
+   mit code == GIT_EBAREREPO und is_bare_repo true. 56 Tests, PASS.
+
+Changes: zwei Bullets unter {{$NEXT}}.
+
+prove -lr t/: 25 Dateien, 309 Tests, alle PASS. Uebersprungen wie ueblich nur
+t/40-remote-ssh.t und t/41-remote-https.t (TEST_GIT_NATIVE_*_URL nicht gesetzt).
+
+Restdrift als Ticket 8 erfasst: Revwalker.pm und Remote.pm deklarieren
+GIT_ITEROVER / GIT_PASSTHROUGH lokal nach, obwohl Git::Libgit2 0.005 beide
+exportiert. Ausserhalb der erlaubten Dateiliste, daher nicht angefasst.
+
+Die fehlende POD von status/status_for_path deckt Ticket 5 ab.
+Committed in b80ecd4.
