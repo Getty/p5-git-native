@@ -1,0 +1,47 @@
+---
+claimed_at: 2026-08-10T20:36:24Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-10
+created: 2026-08-10T20:36:00Z
+id: 23
+priority: low
+status: done
+tags:
+- remote
+- docs
+- phase4
+title: Push-prune verbindet mit GIT_DIRECTION_FETCH, nicht PUSH
+updated: 2026-08-10T20:41:21Z
+---
+
+Beim Umstellen der Konstanten (Ticket 19) aufgefallen: GIT_DIRECTION_PUSH war
+distributionsweit UNBENUTZT. Es gibt genau einen _connect-Aufruf,
+Remote.pm:178, und der uebergibt GIT_DIRECTION_FETCH - auch auf dem
+Push-prune-Pfad:
+
+  push(prune => 1) -> _compute_prune_deletes -> list_refs
+                   -> _connect( GIT_DIRECTION_FETCH, ... )
+
+CLAUDE.md hat das seit jeher als "_connect(DIRECTION_PUSH) + git_remote_ls"
+beschrieben. Das war schlicht falsch.
+
+Kein Verhaltensfehler: git_remote_ls braucht nur das Ref-Advertisement, und das
+liefert bei DIRECTION_FETCH der upload-pack-Service. t/20-remote-local.t deckt
+den Pfad gruen ab, inklusive der prune-Subtests.
+
+Relevant wuerde die Richtung nur bei einem Remote, das Schreib- ohne Leserecht
+gewaehrt - dann authentifiziert man gegen den falschen Service. Kein belegter
+Bedarf, kein Testfall dafuer herstellbar ohne authentifiziertes Remote.
+
+Entschieden: (a) Doku an den Code angleichen, nicht (b) Code an die Doku.
+(b) waere eine Verhaltensaenderung ohne Bedarf und braeuchte einen Test gegen
+ein authentifiziertes Remote mit asymmetrischen Rechten.
+
+Erledigt: CLAUDE.md-Quirk-Bullet korrigiert - nennt jetzt GIT_DIRECTION_FETCH,
+die Aufrufstelle Remote.pm:178, den Grund (upload-pack liefert das
+Advertisement) und die Bedingung, unter der die Unterscheidung zaehlen wuerde.
+GIT_DIRECTION_PUSH bleibt importiert, damit der Symbolsatz des Pakets stabil
+bleibt.
+
+Kein Code geaendert.
