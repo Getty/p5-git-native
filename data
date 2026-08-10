@@ -1,0 +1,37 @@
+---
+class: standard
+completed: 2026-08-10
+created: 2026-08-10T16:14:47Z
+id: 11
+priority: low
+status: done
+tags:
+- cleanup
+- docs
+title: 'Doku-Drift: namespace::clean + make_immutable in KEINER Datei unter lib/'
+updated: 2026-08-10T16:23:56Z
+---
+
+CLAUDE.md ("Module hygiene") und der git-native-core-Skill fordern beide:
+
+  - namespace::clean auf jedem .pm ("already in cpanfile - every file does this")
+  - "no Moo; __PACKAGE__->meta->make_immutable;" am Ende jeder Moo-Klasse
+
+Verifiziert (grep ueber lib/): namespace::clean steht in NULL von 16 Dateien,
+make_immutable in NULL. Die Konvention ist also reine Dokumentation, kein Code
+folgt ihr. Beim Ticket-10-Fix bewusst NICHT nachgezogen (Regel 9: Konformitaet
+mit dem Bestand schlaegt Konformitaet mit der Doku; ein einzelnes Modul
+umzustellen waere ein stiller Fork).
+
+Zwei saubere Ausgaenge, einer muss gewaehlt werden:
+  a) Konvention durchziehen - alle 16 Module bekommen namespace::clean und den
+     make_immutable-Fuss. Achtung: make_immutable ist Moose-Sprache; Moo hat
+     kein ->meta ohne Moo::HandleMoose - die Zeile so wie in CLAUDE.md
+     formuliert wuerde unter reinem Moo sterben. Vor dem Durchziehen also
+     erst pruefen, ob sie ueberhaupt lauffaehig ist.
+  b) Die Forderung aus CLAUDE.md und dem Skill streichen.
+
+Bis dahin laeuft jede neue Datei Gefahr, nach Doku statt nach Bestand gebaut
+zu werden. Lane: git-native-worker (a) bzw. Doku-Owner (b).
+Verifiziert und im Skill korrigiert: (1) namespace::clean nutzt genau 1 von 17 Modulen (Remote/Result.pm), der Skill behauptete "every file does this" - jetzt richtiggestellt, mit dem Hinweis, dass ein Einzelfile-Nachruesten die Konvention forkt. (2) make_immutable stirbt NICHT unter Moo, wie vermutet - ->meta liefert eine Moo::HandleMoose::FakeMetaClass, der Aufruf ist ein stilles No-Op, es wird auch kein Moose nachgeladen. Also nicht gefaehrlich, sondern wirkungslos: Cargo-Cult aus der Moose-Welt. Skill sagt jetzt ausdruecklich "No make_immutable".
+Skill korrigiert, committed in 853c024. Der Code selbst bleibt unveraendert - die Regeln waren falsch, nicht die Module.
