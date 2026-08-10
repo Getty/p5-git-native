@@ -4,7 +4,8 @@ package Git::Native::Repository;
 use Moo;
 use Carp ();
 use Git::Libgit2 qw(
-  GIT_EMODIFIED GIT_OBJECT_ANY GIT_OBJECT_BLOB GIT_OBJECT_TREE
+  GIT_EMODIFIED GIT_ENOTFOUND GIT_EUNBORNBRANCH GIT_ITEROVER
+  GIT_OBJECT_ANY GIT_OBJECT_BLOB GIT_OBJECT_TREE
   GIT_OBJECT_COMMIT GIT_OBJECT_TAG
 );
 use Git::Libgit2::FFI ();
@@ -123,7 +124,7 @@ sub reference_names {
   my @names;
   while (1) {
     my $rc = Git::Libgit2::FFI::git_reference_next_name( \my $name, $iter );
-    last if $rc == -31;  # GIT_ITEROVER
+    last if $rc == GIT_ITEROVER;
     check_rc $rc;
     push @names, $name;
   }
@@ -136,7 +137,7 @@ sub reference_names {
 sub head {
   my $self = shift;
   my $rc = Git::Libgit2::FFI::git_repository_head( \my $ref, $self->_handle );
-  return undef if $rc == -9 || $rc == -3;   # GIT_EUNBORNBRANCH / GIT_ENOTFOUND
+  return undef if $rc == GIT_EUNBORNBRANCH || $rc == GIT_ENOTFOUND;
   check_rc $rc;
   return Git::Native::Reference->new( _handle => $ref, _owner => $self );
 }
@@ -410,7 +411,7 @@ sub branches {
   my @out;
   while (1) {
     my $rc = Git::Libgit2::FFI::git_branch_next( \my $ref, \my $branch_type, $iter );
-    last if $rc == -31;  # GIT_ITEROVER
+    last if $rc == GIT_ITEROVER;
     if ( $rc != 0 ) {
       Git::Libgit2::FFI::git_branch_iterator_free($iter);
       check_rc $rc;
@@ -445,8 +446,10 @@ sub tag_create {
   my ( $self, $name, $target, %args ) = @_;
   my $oid = ref($target) && $target->isa('Git::Native::Oid')
     ? $target : Git::Native::Oid->from_hex($target);
-  # Look up target object generically (commit / tree / blob - GIT_OBJECT_ANY = -2).
-  check_rc Git::Libgit2::FFI::git_object_lookup( \my $obj, $self->_handle, $oid->ptr, -2 );
+  # Look up target object generically (commit / tree / blob).
+  check_rc Git::Libgit2::FFI::git_object_lookup(
+    \my $obj, $self->_handle, $oid->ptr, GIT_OBJECT_ANY,
+  );
 
   my $raw = "\0" x 20;
   my ($oid_p) = FFI::Platypus::Buffer::scalar_to_buffer($raw);

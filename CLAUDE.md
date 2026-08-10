@@ -130,13 +130,24 @@ are stable across 1.5 -> 1.9.
 
 ## Test Hygiene
 
-All tests run with `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null`
-to avoid polluting the user's `~/.gitconfig` (the exact bug Git::Raw
-shipped). Enforced in `t/lib/TestRepo.pm`.
+`t/lib/TestRepo.pm` sets `GIT_CONFIG_GLOBAL=/dev/null
+GIT_CONFIG_SYSTEM=/dev/null` to keep the user's `~/.gitconfig` out of the
+tests (the exact bug Git::Raw shipped). **This does not actually work on
+libgit2 1.5.1** — libgit2 does not honour `GIT_CONFIG_GLOBAL` and reads the
+global level from `$HOME/.gitconfig` through its own sysdir search path, so
+`config_string('user.email')` returns the developer's real address inside
+the suite. Only overriding `HOME` suppresses it. Verified; tracked as karr
+ticket 9. Until that is fixed, treat config-dependent tests as reading the
+developer's environment, and don't assert on config values that the user's
+own gitconfig could supply.
 
 `t/20-remote-local.t` covers the Phase 4 surface end-to-end with two
 working repos linked through a bare repo over `file://` — wildcard push,
-fetch, the PASSTHROUGH credential path, and push `--prune`.
+fetch, and push `--prune`. It does *not* cover the credential callback:
+libgit2 only invokes it when the transport raises an auth challenge, which
+`file://` never does (measured: zero invocations). The callback contract is
+pinned network-free in `t/52-credential-callback.t`, which drives
+`Remote::_make_credential_thunk` directly.
 
 `t/30-revwalk.t`, `t/31-branch.t`, `t/32-tag.t`, `t/33-status.t`,
 `t/34-clone.t` cover the Phase 5 general-purpose surface.
@@ -163,6 +174,25 @@ covers `Repository->object` dispatch to each typed wrapper;
 N-parent path). Status (`t/33`), revwalk (`t/30`), branch `is_head` (`t/31`),
 detached HEAD (`t/37`) and fetch `--prune` (`t/20`) were widened from a
 single happy path toward error and edge cases.
+
+`t/51`–`t/66` are the edge-case layer, added to lift branch coverage from
+59% to 81% and condition coverage from 48% to 76% (`cover -report text`
+after `HARNESS_PERL_SWITCHES=-MDevel::Cover prove -lr t/`; the live network
+tests are excluded because they skip). They target the failure and boundary
+paths rather than statements: every `Error` predicate against every other
+predicate's code (`t/51`), the credential-callback contract (`t/52`), binary
+blob content with embedded NULs (`t/61`), `open_ext` and the `init` argument
+guards (`t/62`), `_known_hosts_match` including `@revoked` / `@cert-authority`
+(`t/64`), and `_build_strarray`'s NULL-on-empty meaning "use the configured
+refspecs" (`t/66`). Two behaviours found while writing them and pinned as
+documented rather than changed: `reference_delete` is idempotent (libgit2
+returns 0 for an absent ref, like `git update-ref -d`), unlike `reference()`
+and `tag()` which throw not-found.
+
+Known gaps, deliberate: the `DEMOLISH` `if $self->{_handle}` false branch in
+every wrapper is unreachable while `_handle` is `required => 1` — that is
+most of the remaining branch misses. `signature_default` has no test at all
+(karr ticket 10, it returns placeholder attributes).
 
 ## Phase 5 - General-purpose Surface
 

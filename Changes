@@ -7,6 +7,27 @@ Revision history for Git-Native
     retry loop that only retries on is_not_matched drops updates under
     contention; reference_create / reference_set_target now document that
     both codes are normal and retryable.
+  - Error: new is_bare_repo predicate (GIT_EBAREREPO). A bare repository
+    has no worktree, so status / status_for_path fail with GIT_EBAREREPO
+    (-8) rather than returning an empty result. Code walking a mixed set
+    of repositories had to compare the raw -8 to tell "not applicable
+    here" from a real error.
+  - Repository: replace the remaining hardcoded libgit2 return codes with
+    the GIT_E* / GIT_ITEROVER / GIT_OBJECT_ANY constants from
+    Git::Libgit2. No behaviour change - head() already treated -9 / -3 as
+    unborn / missing HEAD, and the iterators already stopped on -31.
+  - Tests: new edge-case layer t/51 - t/66, lifting branch coverage from
+    59% to 81% and condition coverage from 48% to 76%. Covers the failure
+    and boundary paths: every Error predicate against every other
+    predicate's code, the credential-callback contract network-free
+    (t/52), binary blob content with embedded NULs, open_ext and the init
+    argument guards, _known_hosts_match including @revoked and
+    @cert-authority, and _build_strarray's NULL-on-empty semantics.
+  - Tests: t/20-remote-local.t no longer claims to cover the PASSTHROUGH
+    credential path. libgit2 invokes the credential callback only when
+    the transport raises an auth challenge, which file:// never does, so
+    the old assertion could not fail. The callback is now pinned in
+    t/52-credential-callback.t instead.
 
 0.004     2026-08-09 20:34:42Z
   - Repository: add compare-and-swap direct reference updates.
