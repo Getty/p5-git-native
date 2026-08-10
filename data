@@ -1,0 +1,81 @@
+---
+claimed_at: 2026-08-10T16:55:40Z
+claimed_by: git-native-network-worker
+class: standard
+completed: 2026-08-10
+created: 2026-08-10T16:39:05Z
+id: 16
+priority: medium
+started: 2026-08-10
+status: done
+tags:
+- remote
+- api
+- phase4
+title: Remote::Result->updated hat auf push eine andere Shape als auf fetch
+updated: 2026-08-10T20:40:48Z
+---
+
+Beim POD-Schreiben fuer Remote/Result.pm (Ticket 5) aufgefallen und per
+file://-Probe bestaetigt:
+
+  fetch: updated-Eintraege sind { ref, from, to }   (aus update_tips)
+  push:  updated-Eintraege sind { ref, reason }     (aus push_update_reference)
+
+Ein Aufrufer, der beide Ergebnisse gleich behandelt ("$u->{to}" ausgeben),
+bekommt auf push undef, ohne Warnung. Die alte POD in Result.pm behauptete
+sogar, push liefere from/to — das war schlicht falsch und ist jetzt
+korrigiert (POD beschreibt den Ist-Zustand, nicht den Wunschzustand).
+
+Fragen fuer die Entscheidung:
+  a) So lassen und nur dokumentieren (aktueller Stand). Rechtfertigung:
+     der Server meldet bei push ein Urteil pro Ref, keine oid-Range —
+     from/to gaebe es nur, wenn wir sie lokal selbst rekonstruieren.
+  b) push zusaetzlich update_tips-analoge Daten mitgeben: die
+     lokale Quell-Oid ist bekannt (expandierte Refspecs -> lokale Refs),
+     die alte Remote-Oid liesse sich aus dem git_remote_ls-Snapshot vor
+     dem Push ziehen (den holen wir bei prune=>1 ohnehin). Kostet bei
+     prune=>0 eine zusaetzliche Verbindung — vermutlich zu teuer.
+  c) reason auch bei fetch-Eintraegen fuellen (heute gar nicht gesetzt),
+     damit wenigstens die Key-Menge identisch ist.
+
+Ausserdem: Delete-Refspecs aus prune=>1 tauchen als normale updated-
+Eintraege auf (Probe: nach prune-Push steht der geloeschte Ref in
+updated). Falls (b) kommt, gehoert dafuer eine eigene Markierung dazu.
+
+Kein Fix in Ticket 5 gemacht — das war explizit POD-only.
+Umgesetzt: additive Vereinheitlichung, Variante (b) so weit sie ohne Extra-Roundtrip geht.
+
+updated-Eintraege haben jetzt IMMER { ref, from, to, reason }, auf fetch
+wie auf push, fehlende Werte als explizites undef (reason durchgaengig "").
+
+  fetch: { ref => local,  from => hex|undef, to => hex|undef, reason => "" }
+  push:  { ref => remote, from => undef,     to => hex|undef, reason => "" }
+
+to WIRD beim push gefuellt: neues _push_update_targets() paart die
+expandierten Refspecs mit den lokalen Quell-Refs (reference->resolve->target),
+also ohne Netzwerk. Deckt +src:dst, src:dst-Remap, colonless src, HEAD:dst
+(symbolisch, wird aufgeloest) ab; nicht aufloesbare Quelle => undef.
+
+from bleibt beim push undef, wie im Ticket abgewogen: der vorherige
+Remote-Stand braucht git_remote_ls, und ein zusaetzlicher Roundtrip pro Push
+waere schlimmer als ein ehrliches undef. Steht so in der POD.
+
+ref bleibt asymmetrisch (push=remote-Name, fetch=lokaler Name) — dokumentiert
+statt umgebogen, ist die Semantik der beiden libgit2-Callbacks.
+
+Nebenbefund geloest: Deletes sind jetzt unterscheidbar. Push-Delete-Refspecs
+(:refs/...) und fetch --prune ergeben beide to => undef. Fuer fetch heisst das
+eine Verhaltensaenderung: libgit2 uebergibt beim Prune die All-Zero-Oid als
+neuen Tip, die kam bisher als "0"x40 durch; wird jetzt wie die alte Seite auf
+undef normalisiert.
+
+Tests in t/49-remote-callbacks.t: Abschnitt 3b pinnt die identische
+Schluesselmenge push vs fetch; _push_update_targets und der
+push_update_reference-Thunk sind netzwerkfrei unit-getestet — der Thunk wird
+direkt aus Perl getrieben (wie t/52 den Credential-Thunk), damit auch der
+REJECTION-Zweig abgedeckt ist, der ueber file:// unerreichbar bleibt.
+
+Blocker fuer gruene Suite: #18 (t/68 pinnt die alte 3-Key-Shape, lag ausserhalb
+der Dateisperre dieses Tasks).
+Vereinheitlichte updated-Shape { ref, from, to, reason } auf fetch und push; to beim push aus den lokalen Quell-Refs gefuellt, from beim push bewusst undef (kein Extra-Roundtrip). Deletes auf beiden Seiten to => undef. POD in Remote.pm (fetch/push) + Remote/Result.pm nachgezogen, t/49 erweitert (24 Tests, gruen). Kein Commit, kein Changes-Eintrag. ACHTUNG: t/68-credential-thunk-errors.t:83-87 ist dadurch rot und lag ausserhalb der Dateisperre — Fix ist ein reason => "" pro erwartetem Hash, siehe #18.
