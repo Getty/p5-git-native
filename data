@@ -1,0 +1,54 @@
+---
+claimed_at: 2026-08-10T16:41:30Z
+claimed_by: git-native-worker
+class: standard
+completed: 2026-08-10
+created: 2026-08-10T16:15:05Z
+id: 12
+priority: low
+status: done
+tags:
+- cleanup
+- ffi
+title: Zwei Konventionen fuer die FFI::Platypus-Instanz in lib/
+updated: 2026-08-10T20:40:26Z
+---
+
+Fuer jeden ->cast brauchen die Wrapper eine FFI::Platypus-Instanz. Es gibt
+zwei Muster nebeneinander:
+
+  frisch gebaut:   lib/Git/Native/Blob.pm:30    FFI::Platypus->new( api => 2 )
+                   lib/Git/Native/Oid.pm:35     FFI::Platypus->new( api => 2 )
+                                                (dort sogar mit "require FFI::Platypus"
+                                                 zur Laufzeit im Sub)
+
+  geteilt:         lib/Git/Native/Repository.pm:498,516
+                   lib/Git/Native/Remote.pm     (12 Stellen)
+                   lib/Git/Native/Signature.pm  (neu, Ticket 10)   Git::Libgit2::FFI::ffi()
+
+Funktional gleichwertig fuer reines cast; die geteilte Variante spart pro
+Aufruf einen Platypus-Konstruktor und ist das juengere/haeufigere Muster,
+deshalb ist der Ticket-10-Code darauf gegangen. Blob.pm und Oid.pm sind die
+Ausreisser.
+
+Zu tun: Blob.pm und Oid.pm auf Git::Libgit2::FFI::ffi() ziehen, das
+Laufzeit-"require FFI::Platypus" in Oid::from_ptr dabei rauswerfen (perl-core:
+use statt require, wenn es keinen Grund fuer require gibt). Rein interne
+Umstellung, keine API-Aenderung. t/45-oid.t und t/61-blob-content.t decken
+beide Pfade ab.
+
+Lane: git-native-worker.
+Erledigt: Blob.pm:30 und Oid.pm:35 nutzen jetzt Git::Libgit2::FFI::ffi(); das
+Laufzeit-"require FFI::Platypus" in Oid::from_ptr ist raus, ebenso das nun
+ungenutzte "use FFI::Platypus 2.00" in Blob.pm (Oid.pm hat dafuer ein
+explizites "use Git::Libgit2::FFI ()" bekommen).
+
+Vorab geprueft, dass die geteilte Instanz die gebrauchten Typen kann: sie
+registriert nur opaque-Aliase (git_repository, git_blob, ...), string(N) ist
+ein Platypus-Builtin und daher unveraendert vorhanden. Empirisch verifiziert,
+dass ->cast("opaque","string(20)") auf der geteilten Instanz byte-exakt ist,
+auch fuer Binaerdaten mit NUL (blob content roundtrip).
+
+t/45-oid.t, t/61-blob-content.t, t/53-tree.t gruen, ebenso die volle Suite
+(prove -lr t/: 44 Dateien, 437 Tests, PASS; 40-remote-ssh und 41-remote-https
+skippen mangels TEST_GIT_NATIVE_*_URL).
