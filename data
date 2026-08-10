@@ -1,0 +1,49 @@
+---
+class: standard
+completed: 2026-08-10
+created: 2026-08-10T15:36:17Z
+id: 8
+priority: low
+status: done
+tags:
+- error
+- cleanup
+title: Revwalker/Remote redefine GIT_ITEROVER / GIT_PASSTHROUGH locally
+updated: 2026-08-10T16:23:46Z
+---
+
+Ausläufer aus Ticket 2 (Magic-Number-Sweep durch lib/Git/Native/).
+
+Repository.pm ist sauber: alle nackten Rückgabecode-Zahlen sind jetzt
+Konstanten aus Git::Libgit2. Übrig bleiben zwei LOKAL nachdeklarierte
+Konstanten, die Git::Libgit2 0.005 bereits selbst exportiert:
+
+  lib/Git/Native/Revwalker.pm:15   GIT_ITEROVER    => -31,
+  lib/Git/Native/Remote.pm:79      GIT_PASSTHROUGH => -30,
+
+Beide sind in einem use-constant-Block, also keine nackten Zahlen an der
+Vergleichsstelle - aber es sind Zweitdefinitionen, die von libgit2
+wegdriften können, ohne dass es jemand merkt. Fix: aus der use-Liste von
+Git::Libgit2 importieren und die lokale Zeile löschen.
+
+Verifiziert (perl -MGit::Libgit2, @EXPORT_OK): GIT_ITEROVER und
+GIT_PASSTHROUGH sind exportiert. Die restlichen lokalen Konstanten sind
+LEGITIM und dürfen bleiben - Git::Libgit2 exportiert sie nicht:
+GIT_SORT_* (Revwalker), GIT_DIRECTION_* (Remote), GIT_BRANCH_* (Branch),
+sowie alle *_OFFSET/*_SIZE Struct-Offsets in Remote.pm.
+
+Lanes: Revwalker.pm -> git-native-worker, Remote.pm -> git-native-network-worker.
+Revwalker-Teil erledigt (git-native-worker): lib/Git/Native/Revwalker.pm importiert GIT_ITEROVER jetzt via 'use Git::Libgit2 qw( GIT_ITEROVER )'; die lokale 'GIT_ITEROVER => -31'-Zeile aus dem use-constant-Block ist weg. GIT_SORT_* bleiben lokal (nicht exportiert). t/30-revwalk.t + t/57-revwalk-edge.t gruen. Remote.pm/GIT_PASSTHROUGH ist NICHT angefasst - liegt bei git-native-network-worker, Ticket bleibt offen bis der Teil durch ist.
+Remote-Teil erledigt (git-native-network-worker): lib/Git/Native/Remote.pm
+importiert GIT_PASSTHROUGH jetzt aus Git::Libgit2 (use-Zeile 7), die lokale
+Nachdeklaration im use-constant-Block ist geloescht. Wert unveraendert -30,
+verifiziert gegen Git::Libgit2::GIT_PASSTHROUGH.
+
+t/52-credential-callback.t vergleicht weiterhin gegen Git::Libgit2s Konstante -
+seit diesem Commit ist das dieselbe Konstante, nicht mehr zwei, die
+auseinanderdriften koennen. Die Zusatzpruefung `is $rc, -30` in t/52 bleibt
+bewusst stehen: sie pinnt den Zahlenwert, den libgit2 tatsaechlich abfragt.
+
+Offen: der GIT_ITEROVER-Zwilling in lib/Git/Native/Revwalker.pm:15 -> Lane
+git-native-worker.
+Beide Haelften erledigt (Revwalker + Remote), committed in 853c024.
