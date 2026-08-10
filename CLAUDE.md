@@ -32,6 +32,7 @@ Git::Native::Repository   workdir, gitdir, is_bare
                           ->tag_delete($name)
                           ->status  -> { path => flags, ... }
                           ->status_for_path($path)
+                          ->index   -> Index   (re-read from disk on every call)
                           ->signature_default
                           ->commit_create(tree =>, parents =>, message =>, ...)
                           ->blob_create_frombuffer($scalar)
@@ -49,6 +50,11 @@ Git::Native::Reference    name, shorthand, target -> Oid, symbolic_target, is_sy
 Git::Native::Config       ->get_string / ->get_bool / ->set_string / ->snapshot
 
 Git::Native::Blob         ->content, ->size, ->oid
+Git::Native::Index        ->entrycount, ->find($path), ->find_prefix($prefix)
+                          ->has_path($path)          exact entry
+                          ->has_prefix($prefix)      raw STRING prefix
+                          ->is_tracked_under($path)  `git ls-files -- $path`
+                          ->reload(force =>?)        read-only, no add/write
 Git::Native::Tree         ->entries, ->entry_by_name
 Git::Native::TreeBuilder  ->insert(name =>, oid =>, mode => 0100644) / ->write
 Git::Native::Commit       ->oid, ->message, ->summary, ->time (epoch), ->time_offset (min)
@@ -298,6 +304,19 @@ The two assertions are different: the real-failure pins (`t/46`, `t/71`,
 `t/72`) say which code libgit2 returns for a given situation, the matrix says
 each predicate is wired to exactly one code.
 
+`t/74-index.t` covers `Git::Native::Index` and the `Repository->index`
+accessor. Three of its twelve subtests are the reason the file exists rather
+than decoration: the working tree provably *cannot* answer the question (a
+clean clone whose `->status` is `{}` while the index holds three paths, and
+`status_for_path` on a directory throwing `-5`), a tracked file deleted from
+disk still answering true, and the string-prefix trap (`tasks` true,
+`task` false, while `has_prefix('task')` is true). The two staleness subtests
+stage a file through the **git CLI** — the only way to write an index from
+outside libgit2 while `Index` stays read-only — and `skip_all` with git off
+`PATH`. Their assertion order is load-bearing and commented as such: the
+shared cached handle means the held-object check must run *before* the
+fresh-accessor check, or it measures nothing.
+
 Known gap, deliberate: the `DEMOLISH` `if $self->{_handle}` false branch in
 every wrapper is unreachable while `_handle` is `required => 1` — that is
 most of the remaining branch misses.
@@ -328,6 +347,32 @@ Past karr's MVP. Quirks:
   the same code a real ambiguity returns — so the wrapper croaks on a
   too-short prefix before the FFI call and `is_ambiguous` keeps one
   meaning. Needs `Git::Libgit2 0.006` (0.005 has no binding).
+
+## Index
+
+`Git::Native::Index` is read-only on purpose — no `add` / `remove` / `write`.
+It exists to answer one question natively that nothing else here can: *is
+anything tracked at or below this path?* `status_for_path` cannot, twice over
+— it is a working-tree comparison, so it misses a path git tracks but that is
+gone from disk, and on a directory it fails `GIT_EAMBIGUOUS` (-5, measured).
+The consumer is `App::karr::Git::is_tracked_under`, which shelled out to
+`git ls-files -z` for exactly this. Two traps, both pinned in `t/74-index.t`:
+
+- **`find_prefix` matches a string, not a path.** `'tasks'` also matches
+  `'tasksfoo.txt'`. The wrapper keeps the two questions apart instead of
+  conflating them: `has_prefix` is the raw string question, and
+  `is_tracked_under` is the path question — trailing slash stripped, then
+  exact-entry match *or* prefix match on `"$path/"`, which is what
+  `git ls-files -- $path` answers.
+- **libgit2 caches the `git_index*` in the repository.** Every
+  `git_repository_index` hands back the *same* object with its refcount
+  bumped, so a fresh Perl wrapper alone sees whatever that shared object last
+  read — a `git add` by another process would be invisible. `Repository->index`
+  therefore calls `git_index_read($idx, 0)` (force 0 = libgit2's stat check,
+  free when unchanged) and does not cache Perl-side. Consequence of the shared
+  handle: a held Index is not a snapshot either — it picks up the new state
+  the moment anyone else calls `->index`. Remove the `git_index_read` line and
+  exactly two assertions in `t/74` go red (verified by commenting it out).
 
 ## Delegation
 

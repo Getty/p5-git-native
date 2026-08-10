@@ -1,6 +1,25 @@
 Revision history for Git-Native
 
 {{$NEXT}}
+  - Repository: new index accessor returning a Git::Native::Index, the
+    first native access to the staging area in this distribution. It
+    answers "is anything tracked at or below this path?" - the question
+    status_for_path cannot: being a working-tree comparison it misses a
+    path git tracks but that is gone from disk, and on a directory it
+    fails GIT_EAMBIGUOUS. Consumers had to shell out to `git ls-files`
+    for this.
+  - Index: new read-only wrapper - entrycount, find, find_prefix,
+    has_path, has_prefix, is_tracked_under, reload. No add / remove /
+    write; nothing here can stage or unstage anything. find_prefix and
+    has_prefix match a raw STRING prefix ('tasks' also matches
+    'tasksfoo.txt'); is_tracked_under is the path-aware question and
+    answers exactly what `git ls-files -- $path` does.
+  - Index: Repository->index re-reads the index file on every call.
+    libgit2 caches the git_index* inside the repository and hands the
+    same object to every git_repository_index call, so without the read
+    a fresh accessor would still report a stale index - a file another
+    process staged would be invisible. A held Index is consequently not
+    a snapshot either; reload is the explicit refresh.
   - Error: new is_locked predicate (GIT_ELOCKED). libgit2 takes a
     refs/<name>.lock for every reference write, so a concurrent writer
     fails with GIT_ELOCKED (-14), not GIT_EMODIFIED. A compare-and-swap

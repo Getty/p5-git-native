@@ -18,6 +18,7 @@ use Git::Native::Tree ();
 use Git::Native::TreeBuilder ();
 use Git::Native::Commit ();
 use Git::Native::Config ();
+use Git::Native::Index ();
 use Git::Native::Signature ();
 use Git::Native::Oid ();
 use Git::Native::Remote ();
@@ -575,6 +576,29 @@ sub status_for_path {
   return $flags;
 }
 
+# ---------- index ----------
+
+# The index, freshly read from disk.
+#
+# libgit2 caches the git_index* inside the git_repository: every
+# git_repository_index call hands back the SAME object with its refcount
+# bumped, so a new Perl wrapper on its own still sees whatever that cached
+# object last read - a `git add` by another process would be invisible. The
+# git_index_read here is what makes the accessor answer for the current disk
+# state; force = 0 leaves it to libgit2's stat check, so repeated calls on an
+# unchanged index cost nothing. Deliberately not cached Perl-side either, for
+# the same reason.
+#
+# The wrapper is built before the read so a failing read frees the handle
+# through DEMOLISH instead of leaking it.
+sub index {
+  my $self = shift;
+  check_rc Git::Libgit2::FFI::git_repository_index( \my $idx, $self->_handle );
+  my $index = Git::Native::Index->new( _handle => $idx, _owner => $self );
+  check_rc Git::Libgit2::FFI::git_index_read( $idx, 0 );
+  return $index;
+}
+
 sub signature_default {
   my $self = shift;
   my $rc = Git::Libgit2::FFI::git_signature_default( \my $sig, $self->_handle );
@@ -1032,6 +1056,31 @@ mixed set of repositories has to handle that explicitly.
 The same C<GIT_STATUS_*> bitmask for a single path, relative to the working
 directory. A path git knows nothing about — neither tracked nor present on
 disk — throws C<is_not_found>; a bare repository throws C<is_bare_repo>.
+
+=method index
+
+  my $index = $repo->index;
+  if ( $index->is_tracked_under('tasks') ) { ... }
+
+The repository's index as a L<Git::Native::Index> — the tracked-path list
+C<git ls-files> prints, queryable without shelling out.
+
+Every call re-reads the index file from disk, so a fresh
+C<< $repo->index >> always reflects what is on disk right now. That is not
+free of consequences and is worth knowing in two directions:
+
+An Index object you B<hold on to> does not update itself, which is what
+this accessor is for. What it also is not is a snapshot of when you took
+it: libgit2 keeps one cached C<git_index*> per repository and every call
+here hands back that same object, so the re-read this one does is felt by
+Index objects handed out earlier. Neither direction is a guarantee — take
+a fresh one from here, or call L<Git::Native::Index/reload>, whenever the
+answer has to be current.
+
+And because this re-reads, any in-memory modification of the index would be
+discarded by the next call. Nothing in L<Git::Native> can make one today —
+L<Git::Native::Index> is read-only — but that is the reason the accessor is
+free to re-read rather than a promise it will keep if that changes.
 
 =method signature_default
 
