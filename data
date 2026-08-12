@@ -1,0 +1,49 @@
+---
+claimed_at: 2026-08-12T03:47:36Z
+claimed_by: main
+class: standard
+completed: 2026-08-12T03:47:36Z
+created: 2026-08-11T21:19:18Z
+id: 25
+priority: medium
+started: 2026-08-12T00:47:11Z
+status: done
+tags:
+- ssh
+- diagnostics
+title: known_hosts warning names ~ instead of the HOME it actually searched
+updated: 2026-08-12T03:47:36Z
+---
+
+Remote.pm:719-721 warns:
+
+    Git::Native: ssh host 'codeberg.org' is not in known_hosts. Run
+    `ssh-keyscan codeberg.org >> ~/.ssh/known_hosts`, or set
+    GIT_NATIVE_SSH_INSECURE=1 to bypass.
+
+The advice says `~`, but never says whose. _known_hosts_match searched
+$ENV{HOME}/.ssh/known_hosts, $ENV{HOME}/.ssh/known_hosts2 and
+/etc/ssh/ssh_known_hosts, and it knows all three paths at that point.
+
+Cost of not saying so, from a real session: karr runs inside a container where
+HOME=/home/karr and no ~/.ssh is mounted. The user read the warning, ran
+ssh-keyscan on the host as instructed, and got the identical warning again --
+because the container never sees the host file. Nothing in the message hints
+that the search happened somewhere else, so the natural reading is that
+ssh-keyscan failed, and the search moves to the wrong place entirely. It took
+comparing host_seen from a direct call (6, the host was found perfectly well
+outside the container) against the warning (0) to locate the real difference.
+
+Not a bug: the matcher is correct. It handles plain, hashed (|1| HMAC-SHA1),
+[host]:port and wildcard fields, and it found the host on the host system
+including entries grep cannot see. This is purely about the message.
+
+Suggestion, in the else branch:
+
+  - name the files that were searched, not `~`;
+  - when none of the three exists or is readable, say that outright -- inside a
+    container that single sentence is the whole answer.
+
+The host_seen>0 branch above it has the same issue in milder form: it says
+"the N known_hosts entries for it" without saying which file they are in.
+Fixed in working tree (not committed): _known_hosts_match returns a third value %where (candidates/searched/seen_in/target); _known_hosts_warning builds the three messages from it and is the network-free test surface. HOME unset -> target undef, advice says 'set HOME'. (matched, host_seen) prefix unchanged, so t/64 is untouched and green. t/43 +5 subtests incl. a tilde-path regression assert; falsifiability verified by mutating the advice back. Changes + CLAUDE.md ('Diagnostics: never say ~') updated. Full suite: 49 files, 528 tests, PASS; t/40+t/41 skip (no live-network env vars).
