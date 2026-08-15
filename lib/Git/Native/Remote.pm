@@ -7,6 +7,7 @@ use Scalar::Util ();
 use Git::Libgit2::FFI ();
 use Git::Libgit2 qw(
   oid_to_hex GIT_PASSTHROUGH GIT_DIRECTION_FETCH GIT_DIRECTION_PUSH
+  fetch_options_prune_offset
 );
 use Git::Native::Error qw( check_rc );
 use FFI::Platypus::Buffer qw( scalar_to_buffer );
@@ -40,7 +41,13 @@ use Digest::SHA qw( sha1 sha256 hmac_sha1 );
 }
 
 # libgit2 1.5.x struct layouts (probed). 1.9.x add fields at the end of
-# git_remote_callbacks but the offsets up through `payload` are stable.
+# git_remote_callbacks but the offsets up through `payload` are stable, so the
+# callback offsets below hold across releases. What does not hold is a field
+# sitting *behind* the embedded callbacks struct -- it moves when the struct
+# grows (120 bytes in 1.5, 128 in 1.9). git_fetch_options.prune is the one such
+# field we write, so its offset comes from Git::Libgit2::fetch_options_prune_offset
+# instead of from this block; a stale value here would land on `update_refs`,
+# which libgit2 1.9 prefers over `update_tips` and calls.
 # Allocate buffers a bit larger than the C struct for forward-compat.
 use constant {
   GIT_REMOTE_CALLBACKS_VERSION => 1,
@@ -75,7 +82,6 @@ use constant {
   GIT_CERT_SSH_SHA256 => 4,
 
   FETCH_OPTS_CALLBACKS_OFFSET => 8,    # callbacks struct (embedded)
-  FETCH_OPTS_PRUNE_OFFSET     => 128,  # int (8 + 120)
 
   PUSH_OPTS_CALLBACKS_OFFSET  => 8,
 
@@ -374,7 +380,7 @@ sub _build_fetch_options {
     my $val = $prune ? 1 : 2;   # 1 = PRUNE, 2 = NO_PRUNE
     my $pb  = pack 'l', $val;
     my ($pbp) = scalar_to_buffer($pb);
-    memcpy( $opts_ptr + FETCH_OPTS_PRUNE_OFFSET, $pbp, 4 );
+    memcpy( $opts_ptr + fetch_options_prune_offset, $pbp, 4 );
     CORE::push @keep, \$pb;
   }
 

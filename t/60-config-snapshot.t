@@ -2,6 +2,7 @@ use Test2::V0;
 use lib 't/lib';
 use TestRepo;
 use Git::Native;
+use Git::Libgit2 qw( GIT_EREADONLY );
 
 # t/39-config.t reads and writes through Repository->config / config_snapshot.
 # Git::Native::Config->snapshot itself - the method that makes a read-only
@@ -51,7 +52,11 @@ subtest 'a snapshot refuses writes' => sub {
   isa_ok $err, ['Git::Native::Error'], 'set_string on a snapshot throws';
   ok !$err->isa('Git::Libgit2::Error'), 'the low-level error does not leak';
   ok $err->code < 0, 'with a negative libgit2 code';
-  like $err->message, qr/readonly/i, 'the message says the backends are read-only';
+  # Assert the condition, not libgit2's prose for it: the wording moved from
+  # "readonly" to "read-only" between releases while the refusal itself -- and
+  # the dedicated GIT_EREADONLY code -- stayed exactly the same.
+  is $err->code, GIT_EREADONLY,
+    "the error is libgit2's read-only refusal";
 
   is $repo->config_string('user.email'), $before,
     'and nothing was written';
