@@ -1,13 +1,13 @@
 ---
 name: git-native-test-writer
-description: "Write and extend tests for Git::Native. Loads perl-core, perl-moo, git-native-core (for the error path / memory ownership contract tests), and Test2::V0 patterns. For every new helper, contract, or wrapper method, writes the matching test first."
+description: "Write and extend tests for Git::Native. Loads getty-perl-core, getty-perl-moo, git-native-core (for the error path / memory ownership contract tests), and Test2::V0 patterns. For every new helper, contract, or wrapper method, writes the matching test first."
 model: opus
 allowed-tools: Read, Edit, Write, Bash, Glob, Grep
 briefing:
   skills:
     - git-native-core
-    - perl-core
-    - perl-moo
+    - getty-perl-core
+    - getty-perl-moo
     - perl-release-dist-ini
 ---
 
@@ -72,7 +72,7 @@ test where they apply:
 
 ## Module hygiene
 
-- `perl-core` and `perl-moo` rules apply — `use Test2::V0;` at the top, no lazy `require`.
+- `getty-perl-core` and `getty-perl-moo` rules apply — `use Test2::V0;` at the top, no lazy `require`.
 - New test files get an `# ABSTRACT:` line if they're substantial (matches the project
   convention).
 - Don't ship tests that fail on a clean checkout. If a test depends on a fixture, the

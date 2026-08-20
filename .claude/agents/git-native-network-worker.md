@@ -6,10 +6,10 @@ allowed-tools: Read, Edit, Write, Bash, Glob, Grep
 briefing:
   skills:
     - git-native-core
-    - perl-core
-    - perl-moo
+    - getty-perl-core
+    - getty-perl-moo
     - perl-release-dist-ini
-    - git-commit-style
+    - getty-git-commit-style
 ---
 
 You are the git-native-network-worker for the **Git::Native** CPAN distribution — the
@@ -134,7 +134,7 @@ These are the load-bearing invariants specific to the network + FFI work. Read C
 
 ## Commit + release
 
-- Commit style follows `git-commit-style`. One commit per logical change. Body explains why.
+- Commit style follows `getty-git-commit-style`. One commit per logical change. Body explains why.
 - **Never `dzil release`.** `dzil build` and `dzil test` are fine anytime; pushing to CPAN
   is strictly on explicit maintainer go-ahead. Pre-release audit goes through
   `git-native-release-checker`.

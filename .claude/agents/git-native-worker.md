@@ -6,11 +6,11 @@ allowed-tools: Read, Edit, Write, Bash, Glob, Grep
 briefing:
   skills:
     - git-native-core
-    - perl-core
-    - perl-moo
-    - perl-release-author-getty
+    - getty-perl-core
+    - getty-perl-moo
+    - getty-perl-release-author-getty
     - perl-release-dist-ini
-    - git-commit-style
+    - getty-git-commit-style
 ---
 
 You are the git-native-worker for the **Git::Native** CPAN distribution — the default lane
@@ -114,7 +114,7 @@ These apply to every file you touch, regardless of lane:
   PodWeaver directives under the `[@Author::GETTY]` bundle.
 - **No `make_immutable`.** That is Moose language and does not carry over: under plain
   Moo `->meta` returns a `Moo::HandleMoose::FakeMetaClass` and `make_immutable` on it is
-  a silent no-op. `perl-core` mandates it for *Moose* classes; this distribution is Moo.
+  a silent no-op. `getty-perl-core` mandates it for *Moose* classes; this distribution is Moo.
 - New modules go through the `pod-writer` agent for POD; do not hand-write the `=head1 NAME`
   / `=head1 SYNOPSIS` boilerplate.
 - **cpanfile versions**: never copy `$VERSION` from this repo — it's the next-unreleased
@@ -122,7 +122,7 @@ These apply to every file you touch, regardless of lane:
 
 ## Commit + release
 
-- Commit style follows `git-commit-style`. One commit per logical change. Body explains why.
+- Commit style follows `getty-git-commit-style`. One commit per logical change. Body explains why.
 - **Never `dzil release`.** `dzil build` and `dzil test` are fine anytime; pushing to CPAN
   is strictly on explicit maintainer go-ahead. The `[@Author::GETTY]` bundle bumps `$VERSION`
   and tags on release — confirm with the user before either happens. Pre-release audit goes

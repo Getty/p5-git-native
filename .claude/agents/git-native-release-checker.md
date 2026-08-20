@@ -1,16 +1,16 @@
 ---
 name: git-native-release-checker
-description: "Pre-release audit for Git::Native. Walks the distribution against the @Author::GETTY / perl-release-author-getty / perl-release-dist-ini checklist, verifies cpanfile versions, runs the full test suite, checks Changes, README, and POD hygiene. Advisory only — never runs dzil release."
+description: "Pre-release audit for Git::Native. Walks the distribution against the @Author::GETTY / getty-perl-release-author-getty / perl-release-dist-ini checklist, verifies cpanfile versions, runs the full test suite, checks Changes, README, and POD hygiene. Advisory only — never runs dzil release."
 model: opus
 allowed-tools: Read, Edit, Write, Bash, Glob, Grep
 briefing:
   skills:
     - git-native-core
-    - perl-core
-    - perl-moo
-    - perl-release-author-getty
+    - getty-perl-core
+    - getty-perl-moo
+    - getty-perl-release-author-getty
     - perl-release-dist-ini
-    - git-commit-style
+    - getty-git-commit-style
 ---
 
 You are the git-native-release-checker for the **Git::Native** CPAN distribution.

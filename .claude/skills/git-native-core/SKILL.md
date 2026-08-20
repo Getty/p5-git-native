@@ -1,6 +1,6 @@
 ---
 name: git-native-core
-description: Architecture, stack, memory ownership, error handling, and libgit2 quirks specific to the Git::Native CPAN distribution. Load on any Git::Native wrapper edit.
+description: Load on any Git::Native wrapper edit — the stack, memory ownership, error handling, and the libgit2 quirks that are not negotiable.
 ---
 
 # Git::Native — project-specific architecture
@@ -116,7 +116,7 @@ before pinning the layout.
 ## Conventions not in CLAUDE.md (project-local)
 
 - **Moo, not Moose.** `has ... => ( is => 'ro', lazy => 1, builder => '_build_x' )` is
-  the dominant pattern; `lazy_build => 1` from `perl-core` applies.
+  the dominant pattern; `lazy_build => 1` from `getty-perl-core` applies.
 - **`namespace::clean`** is in the cpanfile but is used by exactly one module
   (`Remote/Result.pm`); the other 16 do without. Don't add it to a single file — that
   forks the convention. Either leave it alone or sweep the whole `lib/` at once.
@@ -124,7 +124,7 @@ before pinning the layout.
   PodWeaver).
 - **Inline `=attr` / `=method` / `=seealso`** PodWeaver directives under the `[@Author::GETTY]`
   bundle. Use the `pod-writer` agent for new modules.
-- **No `make_immutable`.** That is Moose language; `perl-core` mandates it for Moose
+- **No `make_immutable`.** That is Moose language; `getty-perl-core` mandates it for Moose
   classes, and it does not carry over. Under plain Moo, `->meta` returns a
   `Moo::HandleMoose::FakeMetaClass` and `make_immutable` on it is a silent no-op —
   it neither dies nor does anything (verified against this distribution's Moo). No
