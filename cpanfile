@@ -1,11 +1,11 @@
 requires 'perl'              => '5.020';
+requires 'Carp';
 requires 'Git::Libgit2'      => '0.007';
 requires 'Moo'               => '2.000000';
-requires 'Throwable::Error'  => 0;
-requires 'namespace::clean'  => 0;
-requires 'Path::Tiny'        => 0;
-requires 'Carp'              => 0;
+requires 'Path::Tiny';
+requires 'Throwable::Error';
+requires 'namespace::clean';
 
 on test => sub {
-  requires 'Test2::V0' => 0;
+  requires 'Test2::V0';
 };
