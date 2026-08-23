@@ -1,6 +1,7 @@
 # ABSTRACT: A libgit2 branch (thin wrapper over git_reference)
 
 package Git::Native::Branch;
+our $VERSION = '0.006';
 use Moo;
 use Git::Libgit2 qw( GIT_BRANCH_LOCAL GIT_BRANCH_REMOTE GIT_BRANCH_ALL );
 use Git::Libgit2::FFI ();

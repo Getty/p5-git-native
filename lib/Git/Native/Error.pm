@@ -1,6 +1,7 @@
 # ABSTRACT: Exception class for Git::Native
 
 package Git::Native::Error;
+our $VERSION = '0.006';
 use Moo;
 use Exporter qw( import );
 use Git::Libgit2::Error ();

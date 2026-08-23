@@ -1,6 +1,7 @@
 # ABSTRACT: A libgit2 annotated tag
 
 package Git::Native::Tag;
+our $VERSION = '0.006';
 use Moo;
 use Git::Libgit2::FFI ();
 use Git::Native::Error qw( check_rc );

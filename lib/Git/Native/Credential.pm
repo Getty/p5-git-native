@@ -1,6 +1,7 @@
 # ABSTRACT: A libgit2 credential (passed back from acquire callbacks)
 
 package Git::Native::Credential;
+our $VERSION = '0.006';
 use Moo;
 use Carp ();
 use Git::Libgit2 qw( init_lib );

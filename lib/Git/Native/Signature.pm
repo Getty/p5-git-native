@@ -1,6 +1,7 @@
 # ABSTRACT: A Git author/committer signature
 
 package Git::Native::Signature;
+our $VERSION = '0.006';
 use Moo;
 use Carp ();
 use Git::Libgit2::FFI ();

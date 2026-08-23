@@ -1,6 +1,11 @@
 Revision history for Git-Native
 
 {{$NEXT}}
+  - All modules now carry their own $VERSION. Only the main module had
+    one, so Git::Native::Repository->VERSION and its siblings answered
+    undef while META provides and the generated POD both claimed the
+    dist version. dist.ini drops version_finder = :MainModule, which had
+    confined the version rewrite to the main module.
   - Remote: take the git_fetch_options.prune offset from
     Git::Libgit2::fetch_options_prune_offset instead of a compiled-in
     constant. That constant was derived from libgit2 1.5, where the

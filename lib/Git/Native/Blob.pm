@@ -1,6 +1,7 @@
 # ABSTRACT: A libgit2 blob object
 
 package Git::Native::Blob;
+our $VERSION = '0.006';
 use Moo;
 use Git::Libgit2::FFI ();
 use Git::Native::Oid ();

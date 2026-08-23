@@ -1,6 +1,7 @@
 # ABSTRACT: A libgit2 tree object
 
 package Git::Native::Tree;
+our $VERSION = '0.006';
 use Moo;
 use Git::Libgit2::FFI ();
 use Git::Native::Oid ();
