@@ -293,9 +293,6 @@ C<git_repository_open> sees the change.
 
 =back
 
-Needs L<Git::Libgit2> 0.006 or newer, which is where C<git_libgit2_opts>
-and the C<GIT_CONFIG_LEVEL_*> constants arrived.
-
 =seealso
 
 L<Alien::Libgit2>, L<Git::Libgit2>, L<FFI::Platypus>, L<libgit2|https://libgit2.org/>

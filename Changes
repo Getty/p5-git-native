@@ -11,6 +11,7 @@ Revision history for Git-Native
     address 1 or 2. Requires Git::Libgit2 0.007.
   - t/60-config-snapshot.t: assert GIT_EREADONLY instead of matching
     libgit2 prose, whose wording moved from "readonly" to "read-only".
+    The constant is likewise new in Git::Libgit2 0.007.
 
 0.005     2026-08-11 03:39:12Z
   - Repository: new index accessor returning a Git::Native::Index, the
