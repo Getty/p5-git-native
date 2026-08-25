@@ -1,0 +1,63 @@
+---
+claimed_at: 2026-08-24T05:20:21Z
+claimed_by: git-native-network-worker
+class: standard
+completed: 2026-08-25T05:38:01Z
+created: 2026-08-23T04:21:38Z
+id: 27
+priority: low
+started: 2026-08-24T04:46:48Z
+status: done
+tags:
+- ffi
+- tests
+title: CERT_HOSTKEY offsets have no test that runs
+updated: 2026-08-25T05:38:05Z
+---
+
+Remote.pm:78-82 hardcodes the git_cert_hostkey field offsets, commented as the "(1.5.x layout)": CERT_HOSTKEY_TYPE_OFFSET 4, SHA1 24, SHA256 44.
+
+Measured against the linked libgit2 1.9.3 with offsetof, all three are correct — so this is not a bug. The gap is test coverage: the only code path that reads them is the SSH hostkey verification, which lives behind t/40-remote-ssh.t, and that skips unless TEST_GIT_NATIVE_SSH_URL is set. So no test in a normal run ever exercises them, and a future libgit2 that reorders the struct would surface as a silent misread rather than a red suite.
+
+Same class of bug as the git_fetch_options.prune offset fixed in 0.006 — that one also only misbehaved at runtime, not in the type system. Difference: prune had t/20 and t/49 covering it, these have nothing.
+
+Options: a network-free unit test that probes the offsets against the linked library (the way Git::Libgit2 t/27-struct-layout.t does for prune), or a probe binding in Git::Libgit2 like fetch_options_prune_offset.
+
+
+--- 2026-08-24 (git-native-network-worker) ---
+
+Done as t/75-cert-hostkey-layout.t (network-free), uncommitted for review.
+
+Approach: the marker-scan trick behind fetch_options_prune_offset needs an
+allocator, and libgit2 ships no git_cert_hostkey_init - there is no way to get
+libgit2 to fill a git_cert_hostkey in-process. So the test compiles a ~15-line
+C program at test time against the git2.h Alien::Libgit2 installs and prints
+offsetof(git_cert_hostkey, type/hash_sha1/hash_sha256), sizeof, and the
+git_cert_t / git_cert_ssh_t enum values. It needs a C compiler but does NOT
+link libgit2 (offsetof and the enums resolve at compile time), so no runtime
+linker path can break it. ExtUtils::CBuilder compiles + links; Alien::Libgit2
+->cflags supplies the include dir.
+
+Blind spot handled: a header that does not describe the loaded library. The
+probe prints LIBGIT2_VERSION and the file skip_alls when it disagrees with
+git_libgit2_version(). Also skips (with the compiler diagnostic folded into
+the one-line reason) when there is no compiler or git2.h is unreachable.
+
+Measured on libgit2 1.9.3 (Alien::Libgit2 share install): type=4,
+hash_sha1=24, hash_sha256=44, sizeof(git_cert_hostkey)=96,
+offsetof(git_cert, cert_type)=0, GIT_CERT_X509=1,
+GIT_CERT_HOSTKEY_LIBSSH2=2, GIT_CERT_SSH_SHA1=2, GIT_CERT_SSH_SHA256=4.
+All three constants in Remote.pm are correct - no behaviour change.
+
+Beyond the three offsets the file also pins: cert_type at offset 0 (the
+certcheck thunk reads it with no named constant), that the 4/20/32-byte reads
+stay inside sizeof, and that the SHA1/SHA256 bits do not overlap. Constants
+are reached through ->can so a rename is red rather than a dead file.
+
+Verified red by shadowing Remote.pm with SHA256_OFFSET 40 and SSH_SHA1 8, and
+by renaming CERT_HOSTKEY_TYPE_OFFSET. Both skip paths verified by hand.
+
+Also: cpanfile gains Alien::Libgit2 + ExtUtils::CBuilder under `on test`, and
+a Changes bullet. Follow-up recorded separately.
+
+Committed as 8150746; probe-binding follow-up stays karr #30.
