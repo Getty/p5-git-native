@@ -12,7 +12,8 @@ consumers see. Name contrasts deliberately with `Git::Wrapper` and
 
 ```
 Git::Native               plain package - no Moo, no ->new; every sub is a class method
-                          ->open / ->init($path, bare =>?, initial_branch =>?) / ->clone($url, $path)
+                          ->open / ->open_ext($start, flags =>?, ceiling_dirs =>?)
+                          ->init($path, bare =>?, initial_branch =>?) / ->clone($url, $path)
                           ->reference_name_is_valid($name)
                           ->set_config_search_path(system|global|xdg|programdata => $dir)
                             process-global libgit2 option, not per-repository
@@ -20,7 +21,7 @@ Git::Native               plain package - no Moo, no ->new; every sub is a class
 Git::Native::Repository   workdir, gitdir, is_bare
                           ->config / ->config_snapshot / ->config_string($k) / ->config_bool($k)
                           ->reference($name), ->reference_names(glob =>)
-                          ->reference_create / ->reference_delete / ->reference_exists
+                          ->reference_create / ->reference_set_target / ->reference_delete / ->reference_exists
                           ->reference_symbolic_create($name, $target, force =>?, message =>?)
                           ->head -> Reference|undef / ->head_unborn / ->head_detached
                           ->set_head($refname)
@@ -37,7 +38,7 @@ Git::Native::Repository   workdir, gitdir, is_bare
                           ->signature_default
                           ->commit_create(tree =>, parents =>, message =>, ...)
                           ->blob_create_frombuffer($scalar)
-                          ->object($oid), ->tree($oid), ->tree_builder
+                          ->object($oid), ->blob / ->tree / ->commit($oid), ->tree_builder
                           ->object_by_prefix($short_hex)   (4..40 chars, git rev-parse)
                           DESTROY: git_repository_free
 
@@ -56,8 +57,8 @@ Git::Native::Index        ->entrycount, ->find($path), ->find_prefix($prefix)
                           ->has_prefix($prefix)      raw STRING prefix
                           ->is_tracked_under($path)  `git ls-files -- $path`
                           ->reload(force =>?)        read-only, no add/write
-Git::Native::Tree         ->entries, ->entry_by_name
-Git::Native::TreeBuilder  ->insert(name =>, oid =>, mode => 0100644) / ->write
+Git::Native::Tree         ->entrycount, ->entries, ->entry_by_name
+Git::Native::TreeBuilder  ->insert(name =>, oid =>, mode => 0100644) / ->remove($name) / ->write
 Git::Native::Commit       ->oid, ->message, ->summary, ->time (epoch), ->time_offset (min)
                           ->tree, ->tree_oid, ->parent_count, ->parent_oids
 Git::Native::Remote       ->url, ->name
@@ -76,7 +77,7 @@ Git::Native::Tag          ->name / ->message / ->target_id   (annotated only)
 Git::Native::Signature    name, email, when, offset
                           ->from_handle($ptr)  adopts a libgit2-allocated
                           git_signature*, copying the fields out of the struct
-Git::Native::Oid          stringify hex, ->raw (20B), ->short(7)
+Git::Native::Oid          stringify hex, ->raw (20B), ->short(7), ->from_hex / ->from_raw / ->from_ptr
 Git::Native::Error        isa Throwable::Error; code, klass, message
                           is_not_found / is_exists / is_auth / is_certificate /
                           is_conflict / is_not_fast_forward / is_unborn_branch / is_invalid_spec
