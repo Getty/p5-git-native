@@ -1,0 +1,28 @@
+---
+claimed_at: 2026-08-24T04:46:11Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-25T05:38:19Z
+created: 2026-08-23T04:21:18Z
+id: 26
+priority: medium
+started: 2026-08-24T04:46:11Z
+status: done
+tags:
+- ci
+- release
+title: CI cannot catch an unpublished prereq floor
+updated: 2026-08-25T05:38:23Z
+---
+
+The linux.yml / macos.yml workflows check out getty/p5-alien-libgit2 and getty/p5-git-libgit2 and `dzil install` them from the sibling HEAD (linux.yml:37-76). That is deliberate — it lets the suite run against unreleased siblings — but it means the CI never resolves the dependency chain from CPAN.
+
+Consequence, measured on the 0.006 cycle: cpanfile pinned Git::Libgit2 0.007 while CPAN only had 0.006. Every CI job stayed green while `cpanm Git::Native` would have failed for every user. A green CI is therefore NOT a release signal for this distribution.
+
+Options:
+- an extra job that resolves deps from CPAN only (no sibling checkout) and is allowed to fail while a sibling is unreleased, so the gap is at least visible
+- keep it a manual pre-release step and rely on git-native-release-checker, which does catch it (it did, this cycle)
+
+No action needed before the 0.006 release — the check was done by hand.
+
+Committed as 7038b06.
