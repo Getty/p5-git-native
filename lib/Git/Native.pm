@@ -2,7 +2,8 @@
 
 package Git::Native;
 our $VERSION = '0.006';
-use Moo;
+use strict;
+use warnings;
 use Carp ();
 use Git::Libgit2 qw(
   init_lib
@@ -160,10 +161,16 @@ sub set_config_search_path {
 
 =description
 
-L<Git::Native> is a Moo wrapper around L<Git::Libgit2> (which binds
-C<libgit2> via L<FFI::Platypus>). Use it instead of L<Git::Wrapper> or
-L<Git::Repository> when you want to do Git work without forking the
-C<git> binary on every operation.
+L<Git::Native> wraps L<Git::Libgit2> (which binds C<libgit2> via
+L<FFI::Platypus>) in a set of Moo classes. Use it instead of
+L<Git::Wrapper> or L<Git::Repository> when you want to do Git work
+without forking the C<git> binary on every operation.
+
+This package itself is not one of those classes. It holds no state and
+has no constructor - there is no C<Git::Native-E<gt>new>. Everything here
+is a class method: C<open>, C<open_ext>, C<init> and C<clone> hand back a
+L<Git::Native::Repository>, and the remaining two do not need a
+repository at all.
 
 Contrast:
 - L<Git::Wrapper>, L<Git::Repository>: shell out to C<git>

@@ -6,12 +6,13 @@ consumers see. Name contrasts deliberately with `Git::Wrapper` and
 
 ## Stack
 
-`Git::Native` (Moo) -> `Git::Libgit2` (FFI) -> `Alien::Libgit2` (libgit2 C lib).
+`Git::Native` (Moo wrapper classes) -> `Git::Libgit2` (FFI) -> `Alien::Libgit2` (libgit2 C lib).
 
 ## Class Layout
 
 ```
-Git::Native               ->open / ->init($path, bare =>?, initial_branch =>?) / ->clone($url, $path)
+Git::Native               plain package - no Moo, no ->new; every sub is a class method
+                          ->open / ->init($path, bare =>?, initial_branch =>?) / ->clone($url, $path)
                           ->reference_name_is_valid($name)
                           ->set_config_search_path(system|global|xdg|programdata => $dir)
                             process-global libgit2 option, not per-repository

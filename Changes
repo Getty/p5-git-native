@@ -1,6 +1,13 @@
 Revision history for Git-Native
 
 {{$NEXT}}
+  - Git::Native: drop `use Moo` from the entry-point package, which takes
+    the constructor away with it. The package declares no attributes and
+    every sub in it is a class method, so Git::Native->new returned an
+    object no method ever read - indistinguishable from passing the class
+    name, which is what every caller did anyway. Nothing in this
+    distribution or in its only known consumer ever called it. The
+    wrapper classes under Git::Native:: are untouched and still Moo.
   - All modules now carry their own $VERSION. Only the main module had
     one, so Git::Native::Repository->VERSION and its siblings answered
     undef while META provides and the generated POD both claimed the
