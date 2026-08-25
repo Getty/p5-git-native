@@ -318,6 +318,19 @@ outside libgit2 while `Index` stays read-only — and `skip_all` with git off
 shared cached handle means the held-object check must run *before* the
 fresh-accessor check, or it measures nothing.
 
+`t/75-cert-hostkey-layout.t` pins the three `git_cert_hostkey` field offsets
+`Remote` compiles in (`CERT_HOSTKEY_TYPE/SHA1/SHA256_OFFSET`), plus the
+`git_cert_t` / `git_cert_ssh_t` values the certificate_check thunk branches
+on. Their only reader is the SSH hostkey verification behind `t/40`, which
+skips without `TEST_GIT_NATIVE_SSH_URL` — the same silent-misread blind spot
+the `git_fetch_options.prune` offset had before 0.006. libgit2 has no
+`git_cert_hostkey_init`, so the marker-scan probe used for prune cannot work;
+instead the test compiles `offsetof()` against the `git2.h` that
+`Alien::Libgit2` installs (compile-time only, no linking against libgit2) and
+`skip_all`s, with the reason, when there is no C compiler, no reachable
+header, or when the header's `LIBGIT2_VERSION` disagrees with the loaded
+library. Follow-up for a probe binding on the Git::Libgit2 side is karr #30.
+
 Known gap, deliberate: the `DEMOLISH` `if $self->{_handle}` false branch in
 every wrapper is unreachable while `_handle` is `required => 1` — that is
 most of the remaining branch misses.

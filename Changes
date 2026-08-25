@@ -24,6 +24,18 @@ Revision history for Git-Native
   - t/60-config-snapshot.t: assert GIT_EREADONLY instead of matching
     libgit2 prose, whose wording moved from "readonly" to "read-only".
     The constant is likewise new in Git::Libgit2 0.007.
+  - t/75-cert-hostkey-layout.t: new network-free probe pinning the
+    git_cert_hostkey field offsets Remote compiles in. They are read only
+    from the SSH certificate_check callback, so t/40-remote-ssh.t was
+    their sole coverage and it skips without TEST_GIT_NATIVE_SSH_URL -
+    the same blind spot the git_fetch_options.prune offset had. The test
+    compiles offsetof() against the git2.h Alien::Libgit2 installs and
+    compares the measurement with the constants, along with the
+    git_cert_t and git_cert_ssh_t values the callback branches on. It
+    skips, with the reason, when there is no C compiler, when git2.h is
+    not reachable, or when the header's LIBGIT2_VERSION disagrees with
+    the loaded library. Adds Alien::Libgit2 and ExtUtils::CBuilder as
+    test prerequisites.
 
 0.005     2026-08-11 03:39:12Z
   - Repository: new index accessor returning a Git::Native::Index, the

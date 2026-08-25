@@ -7,5 +7,7 @@ requires 'Throwable::Error';
 requires 'namespace::clean';
 
 on test => sub {
+  requires 'Alien::Libgit2';
+  requires 'ExtUtils::CBuilder';
   requires 'Test2::V0';
 };
