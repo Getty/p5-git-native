@@ -1,0 +1,38 @@
+---
+class: standard
+completed: 2026-08-25T14:02:36Z
+created: 2026-08-24T05:20:35Z
+id: 30
+priority: low
+started: 2026-08-25T14:02:36Z
+status: done
+tags:
+- ffi
+- tests
+title: Move the git_cert_hostkey offsets behind a Git::Libgit2 probe binding
+updated: 2026-08-25T14:02:41Z
+---
+
+Follow-up to #27. t/75-cert-hostkey-layout.t now measures the three
+git_cert_hostkey offsets Remote.pm compiles in, but it measures them from
+the header rather than from the loaded library, and it needs a C compiler
+to do it (skips otherwise). Remote.pm still carries the constants.
+
+The cleaner long-term design is the one fetch_options_prune_offset already
+uses in Git::Libgit2: a probe binding that derives the offset from the
+library at runtime, so Git::Native reads it instead of hardcoding it.
+git_cert_hostkey has no *_init function, so the marker-scan trick does not
+carry over - a binding would have to expose the offsets some other way
+(a small C accessor compiled into the XS/FFI side of Git::Libgit2, or
+constants generated at Git::Libgit2 build time from git2.h, which is where
+Alien::Libgit2's cflags are already available).
+
+Spans two distributions: Git::Libgit2 gains the binding and a test, then
+Git::Native drops CERT_HOSTKEY_TYPE_OFFSET / _SHA1_OFFSET / _SHA256_OFFSET
+and pins the Git::Libgit2 version. Sequencing matters - Git::Libgit2 has to
+be released first (see the getty-perl-core cpanfile rule).
+
+Not urgent: all three offsets are correct on the 1.5 floor and on 1.9.3,
+and t/75 now goes red if that stops being true on a machine with a compiler.
+
+Git::Libgit2 30bd8fd + Git::Native c7adc54; offsets ABI-derived in the binding, t/75 cross-checks offsetof and pins the constants gone.
