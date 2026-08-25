@@ -79,3 +79,44 @@ jobs:
           dzil install
       - name: dzil test
         uses: Getty/p5-dist-zilla-pluginbundle-author-getty/.github/actions/dzil-test@main
+
+  # The debian jobs install Alien::Libgit2 and Git::Libgit2 from the sibling
+  # repos' HEAD, so they never resolve the dependency chain from CPAN: a
+  # cpanfile floor that is not published yet stays green there while
+  # `cpanm Git::Native` fails for every user (happened on the 0.006 cycle,
+  # karr #26). This job resolves every prereq from CPAN only. It is allowed
+  # to fail while a sibling release is pending - the point is that the gap
+  # shows up in the run, not that it blocks the push. A green result here
+  # is the actual release signal.
+  cpan-only:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    container:
+      image: perl:5.40-bookworm
+    env:
+      TEST_GIT_NATIVE_HTTPS_URL: https://github.com/getty/p5-www-chain.git
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fix safe.directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Install build prerequisites
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            libgit2-dev pkg-config git
+      - name: Install Dist::Zilla
+        env:
+          PERL_CPANM_OPT: --mirror http://cpan.metacpan.org --mirror-only
+        run: cpanm -nq Dist::Zilla
+      - name: Install prerequisites from CPAN only
+        env:
+          PERL_CPANM_OPT: --mirror http://cpan.metacpan.org --mirror-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          dzil authordeps --missing | cpanm -nq
+          # listdeps reports a prereq whose installed version is below the
+          # cpanfile floor; cpanm then fails if CPAN cannot satisfy it.
+          dzil listdeps --author --missing | cpanm -nq
+      - name: dzil test
+        uses: Getty/p5-dist-zilla-pluginbundle-author-getty/.github/actions/dzil-test@main
