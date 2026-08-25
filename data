@@ -1,0 +1,26 @@
+---
+claimed_at: 2026-08-24T04:46:33Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-25T05:38:10Z
+created: 2026-08-23T15:48:55Z
+id: 28
+priority: low
+started: 2026-08-24T04:46:33Z
+status: done
+tags:
+- packaging
+- release
+title: Agent tooling ships inside the CPAN tarball
+updated: 2026-08-25T05:38:14Z
+---
+
+The built dist contains the whole .claude/ tree (5 agent files, 7 SKILL.md — one of them 565 lines — rules, settings.json) plus CLAUDE.md at 23 KB. Cause is Git::GatherDir running with include_dotfiles = 1 from the [Author::GETTY] bundle, so every tracked dotfile is gathered.
+
+Git::Libgit2 0.007 behaves identically (there also .claude/, CLAUDE.md, TODO.md, .gitignore, .github/workflows/*), so this is a bundle-level decision rather than a per-dist accident — which is why this is one ticket and not one per repo.
+
+Not a bug and it predates 0.006: the files are tracked, so gathering them is correct behaviour. The question is whether internal agent instructions belong in what CPAN mirrors and indexes forever. A consumer installing Git::Native gets the prompt library along with the code.
+
+Options: leave as is (deliberate), or add a PruneFiles / exclude for .claude and CLAUDE.md in dist.ini. Decide once, apply to both dists.
+
+Committed as 3c36db1.
