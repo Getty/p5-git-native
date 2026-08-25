@@ -1,0 +1,32 @@
+---
+claimed_at: 2026-08-24T04:47:06Z
+claimed_by: git-native-worker
+class: standard
+completed: 2026-08-25T05:37:52Z
+created: 2026-08-23T18:49:53Z
+id: 29
+priority: low
+started: 2026-08-24T04:47:06Z
+status: done
+tags:
+- github
+- api
+title: 'GH #1: Git::Native->new existiert ohne Zweck'
+updated: 2026-08-25T05:37:56Z
+---
+
+Gemeldet 2026-06-25, GitHub-Issue #1. Zwei Monate, null Kommentare, keine Antwort.
+
+Git::Native hat ein new, das ein Objekt ohne jeden Zustand baut -- die Klasse
+hat keine Attribute. Alle Methoden in der Datei sind Klassenmethoden, die
+Git::Native::Repository-Objekte zurueckgeben.
+
+Vorschlag des Melders: die Zeile "use Moo" streichen, dann verschwindet new
+mitsamt dem Konstruktor.
+
+Zu pruefen ist nur, ob jemand Git::Native->new tatsaechlich aufruft -- innerhalb
+der Flotte ist karr der einzige Konsument und benutzt Git::Native->open. Wenn
+das haelt, ist es ein Zweizeiler. Falls doch, waere es eine
+API-Aenderung und gehoert in die Changes.
+
+Committed as 17def33.
