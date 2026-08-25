@@ -135,24 +135,23 @@ skip_all 'git2.h says libgit2 '.( $header_version // $probe{header_version} // '
 
 note 'measuring libgit2 '.$runtime_version.' via '.join( ' ', @cflags );
 
-# ---- the offsets Remote.pm compiles in ----
+# ---- the offsets Remote.pm reads from Git::Libgit2 ----
+
+my %off = Git::Libgit2::cert_hostkey_offsets();
 
 subtest 'git_cert_hostkey field offsets' => sub {
-  # Left column: the constant in Git::Native::Remote. Right column: the field
-  # _verify_known_host reads at that offset. ->can rather than a direct call so
-  # a renamed constant is a red test rather than a dead test file.
-  my @cases = (
-    [ 'CERT_HOSTKEY_TYPE_OFFSET',   'git_cert_hostkey', 'type'        ],
-    [ 'CERT_HOSTKEY_SHA1_OFFSET',   'git_cert_hostkey', 'hash_sha1'   ],
-    [ 'CERT_HOSTKEY_SHA256_OFFSET', 'git_cert_hostkey', 'hash_sha256' ],
-  );
-  for my $case (@cases) {
-    my ( $const, $struct, $field ) = @$case;
-    my $code = Git::Native::Remote->can($const);
-    ok $code, 'Git::Native::Remote::'.$const.' exists' or next;
-    is $code->(), $probe{$field},
-      $const.' == offsetof('.$struct.', '.$field.') == '.$probe{$field};
+  # Remote.pm no longer compiles the offsets in; it reads them from
+  # Git::Libgit2::cert_hostkey_offsets (karr #30), so that is what gets
+  # measured against offsetof() here.
+  for my $case ( [ type => 'type' ], [ sha1 => 'hash_sha1' ],
+                 [ sha256 => 'hash_sha256' ] ) {
+    my ( $key, $field ) = @$case;
+    is $off{$key}, $probe{$field},
+      "cert_hostkey_offsets $key == offsetof(git_cert_hostkey, $field) == $probe{$field}";
   }
+
+  ok !Git::Native::Remote->can('CERT_HOSTKEY_TYPE_OFFSET'),
+    'the compiled-in copy of the offsets is gone from Remote.pm';
 
   # _make_certcheck_thunk reads the cert kind at the cert pointer itself, with
   # no constant to name the 0 - so the 0 gets pinned here instead.
@@ -163,13 +162,13 @@ subtest 'git_cert_hostkey field offsets' => sub {
 subtest 'the fingerprint reads stay inside the struct' => sub {
   # An offset can be right while the read still runs off the end - that is what
   # would happen if a future libgit2 dropped a hash field and the struct shrank
-  # under a constant that still looked plausible.
+  # under an offset that still looked plausible.
   my $size = $probe{sizeof_cert_hostkey};
-  cmp_ok Git::Native::Remote::CERT_HOSTKEY_TYPE_OFFSET() + 4, '<=', $size,
+  cmp_ok $off{type} + 4, '<=', $size,
     'the 4-byte git_cert_ssh_t read fits in the '.$size.'-byte struct';
-  cmp_ok Git::Native::Remote::CERT_HOSTKEY_SHA1_OFFSET() + 20, '<=', $size,
+  cmp_ok $off{sha1} + 20, '<=', $size,
     'the 20-byte SHA1 read fits';
-  cmp_ok Git::Native::Remote::CERT_HOSTKEY_SHA256_OFFSET() + 32, '<=', $size,
+  cmp_ok $off{sha256} + 32, '<=', $size,
     'the 32-byte SHA256 read fits';
 };
 

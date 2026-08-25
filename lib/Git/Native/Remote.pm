@@ -8,7 +8,7 @@ use Scalar::Util ();
 use Git::Libgit2::FFI ();
 use Git::Libgit2 qw(
   oid_to_hex GIT_PASSTHROUGH GIT_DIRECTION_FETCH GIT_DIRECTION_PUSH
-  fetch_options_prune_offset
+  fetch_options_prune_offset cert_hostkey_offsets
 );
 use Git::Native::Error qw( check_rc );
 use FFI::Platypus::Buffer qw( scalar_to_buffer );
@@ -75,10 +75,7 @@ use constant {
   GIT_CERT_X509            => 1,
   GIT_CERT_HOSTKEY_LIBSSH2 => 2,
 
-  # git_cert_hostkey field offsets + git_cert_ssh_t bits (1.5.x layout)
-  CERT_HOSTKEY_TYPE_OFFSET   => 4,    # git_cert_ssh_t bitmask (which hashes set)
-  CERT_HOSTKEY_SHA1_OFFSET   => 24,   # hash_sha1[20]
-  CERT_HOSTKEY_SHA256_OFFSET => 44,   # hash_sha256[32]
+  # git_cert_ssh_t bits
   GIT_CERT_SSH_SHA1   => 2,
   GIT_CERT_SSH_SHA256 => 4,
 
@@ -695,16 +692,20 @@ sub _make_certcheck_thunk {
 # match, 0 otherwise (with an actionable warning).
 sub _verify_known_host {
   my ( $cert_ptr, $host ) = @_;
-  my $bits = unpack 'l', _peek_bytes( $cert_ptr + CERT_HOSTKEY_TYPE_OFFSET, 4 );
+  # The git_cert_hostkey field offsets come from Git::Libgit2 (derived from
+  # the ABI, karr #30); t/75-cert-hostkey-layout.t cross-checks them against
+  # offsetof() wherever a C compiler is available.
+  my %off  = cert_hostkey_offsets();
+  my $bits = unpack 'l', _peek_bytes( $cert_ptr + $off{type}, 4 );
 
   my ( $digest, $want );
   if ( $bits & GIT_CERT_SSH_SHA256 ) {
     $digest = 'sha256';
-    $want   = _peek_bytes( $cert_ptr + CERT_HOSTKEY_SHA256_OFFSET, 32 );
+    $want   = _peek_bytes( $cert_ptr + $off{sha256}, 32 );
   }
   elsif ( $bits & GIT_CERT_SSH_SHA1 ) {
     $digest = 'sha1';
-    $want   = _peek_bytes( $cert_ptr + CERT_HOSTKEY_SHA1_OFFSET, 20 );
+    $want   = _peek_bytes( $cert_ptr + $off{sha1}, 20 );
   }
   else {
     warn "Git::Native: ssh hostkey for '$host' offers no SHA1/SHA256 "
