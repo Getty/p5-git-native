@@ -26,4 +26,10 @@ ok( Git::Native::Remote->can('new'),        'Remote->new exists' );
 ok( Git::Native::Config->can('get_string'), 'Config->get_string exists' );
 ok( Git::Native->can('reference_name_is_valid'), 'Git::Native->reference_name_is_valid exists' );
 
+# 0.006 dropped `use Moo` from the entry package, which took the constructor
+# with it: every sub here is a class method and Git::Native->new only ever
+# returned an object no caller read. Pin the removal so it does not creep back
+# in the day someone adds an attribute.
+ok( !Git::Native->can('new'), 'Git::Native has no constructor (Moo dropped in 0.006)' );
+
 done_testing;
