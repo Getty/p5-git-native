@@ -1,7 +1,7 @@
 # ABSTRACT: Per-ref outcomes from a Remote fetch or push
 
 package Git::Native::Remote::Result;
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use Moo;
 use Carp ();
 use namespace::clean;

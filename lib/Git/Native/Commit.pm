@@ -1,7 +1,7 @@
 # ABSTRACT: A libgit2 commit object
 
 package Git::Native::Commit;
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use Moo;
 use Git::Libgit2::FFI ();
 use Git::Native::Error qw( check_rc );

@@ -1,7 +1,7 @@
 # ABSTRACT: A libgit2 index (the staging area), read-only
 
 package Git::Native::Index;
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use Moo;
 use Carp ();
 use Git::Libgit2 qw( GIT_ENOTFOUND );

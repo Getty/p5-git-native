@@ -1,7 +1,7 @@
 # ABSTRACT: Walk commits in topological / time order
 
 package Git::Native::Revwalker;
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use Moo;
 use Carp ();
 use Git::Libgit2 qw(

@@ -1,5 +1,7 @@
 Revision history for Git-Native
 
+{{$NEXT}}
+
 0.006     2026-08-30 14:35:09Z
   - Remote: read the git_cert_hostkey field offsets from
     Git::Libgit2::cert_hostkey_offsets (new in 0.007) instead of
