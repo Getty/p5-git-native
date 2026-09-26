@@ -34,7 +34,7 @@ This rule depends on whether the Agent/Task tool is available to you.
 
 - **You can spawn subagents** (orchestrating main agent): Do NOT touch behavior-relevant
   Git::Native code yourself — delegate to the right `git-native-*` agent. Your lane:
-  coordinate, inspect, plan, review diffs, run tests, manage git, write/curate docs and
+  coordinate, inspect, plan, review diffs, run tests, write/curate docs and
   Changes notes. When in doubt, delegate. Why: the `git-native-*` agents get their skills
   force-loaded via `briefing.skills` (git-native-core, getty-perl-core, getty-perl-moo, …); the bare
   main agent gets no briefing and would touch the libgit2 quirks with too little context.
@@ -57,17 +57,20 @@ This rule depends on whether the Agent/Task tool is available to you.
   quirks), status / status_for_path (git_status_foreach with closure), tag() undef-on-lightweight,
   tag_names() walker, refname validation, head_detached / set_head, branch listings.
 - **`git-native-test-writer`** — writes and extends tests for all of the above.
-- **`git-native-release-checker`** — pre-release audit. Advisory only, never `dzil release`.
+- **`git-native-release-manager`** — pre-release audit. Advisory only, never `dzil release`.
 
 Behavior-relevant = runtime behavior, public API, the wrapper under `lib/Git/Native/`,
 FFI struct layouts, error handling (check_rc, error predicates), tests, performance, the
 credential-callback closure lifetime, memory ownership (handle pairing with DESTROY).
 Pure prose docs, ADRs, and `Changes` notes are not.
 
+**Only `git-native-release-manager` commits.** A worker leaves a commit-ready tree and hands its card
+to `review`; you then dispatch `git-native-release-manager` to cut the commit and close the card.
+
 ## Coordination — karr board (always in scope)
 
 Ticket coordination is the orchestrating agent's job, so `karr` is always in scope — don't
-invoke the `kanban-issues-karr-cli` skill first, just use it. Git-native kanban; board state lives in
+invoke the `kanban-issues-karr-coordination` skill first, just use it. Git-native kanban; board state lives in
 `refs/karr/*` in this repo (Git::Native is a single distribution — one board, no
 cross-repo handoff). Day-to-day:
 
@@ -78,7 +81,7 @@ cross-repo handoff). Day-to-day:
 - mutating commands auto-sync; `karr sync --pull|--push` for explicit exchange
 
 Use karr to record decisions worth solidifying, drift to reconcile, and follow-up work
-that should not block the current change. Full command surface: skill `kanban-issues-karr-cli`.
+that should not block the current change. Full command surface: skill `kanban-issues-karr-coordination`.
 
 ## Public issues (GitHub) — never act without instruction
 
@@ -99,4 +102,4 @@ confirmed first because it publishes under the maintainer's name.
 STRICTLY forbidden without the maintainer's explicit go-ahead — even if a plan or TODO
 lists "release" as the next step. The `[@Author::GETTY]` bundle bumps `$VERSION` and tags
 on release; for anything heading toward release: stop and ask. Pre-release audit goes
-through `git-native-release-checker`.
+through `git-native-release-manager`.

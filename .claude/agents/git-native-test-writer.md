@@ -8,7 +8,6 @@ briefing:
     - git-native-core
     - getty-perl-core
     - getty-perl-moo
-    - perl-release-dist-ini
 ---
 
 You are the git-native-test-writer for the **Git::Native** CPAN distribution.

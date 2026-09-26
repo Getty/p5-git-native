@@ -449,7 +449,7 @@ principle and lane are in `.claude/rules/git-native-rules.md`.
 | Remote / Credential / clone / fetch / push / FFI struct margins / live network | `git-native-network-worker` |
 | clone / status / tag / tag_names / refname / head / branch (Phase 5 surface) | `git-native-phase5-worker` |
 | Write / extend tests | `git-native-test-writer` |
-| Pre-release audit (CPAN) | `git-native-release-checker` |
+| Commits, `Changes`, card → done, pre-release audit | `git-native-release-manager` |
 
 The agents carry their skills via `briefing.skills` (see `.claude/agents/`); the main
 agent delegates rather than loading them. Skill sources live under `.claude/skills/`,
