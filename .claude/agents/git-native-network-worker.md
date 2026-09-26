@@ -2,7 +2,6 @@
 name: git-native-network-worker
 description: "Git::Native network/FFI specialist — Phase 4 surface (Remote / Credential / clone), push-wildcard expansion, no-native-prune-on-push, credential-callback closure lifetime, FFI struct over-allocation margins, known_hosts parsing, live network tests. Delegate here for any Git::Native::Remote, Git::Native::Credential, Git::Native->clone, or fetch/push/list_refs change. Leaves a commit-ready tree; never commits — commits belong to git-native-release-manager."
 model: opus
-allowed-tools: Read, Edit, Write, Bash, Glob, Grep
 briefing:
   skills:
     - git-native-core

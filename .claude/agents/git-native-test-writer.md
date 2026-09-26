@@ -2,7 +2,6 @@
 name: git-native-test-writer
 description: "Write and extend tests for Git::Native. Loads getty-perl-core, getty-perl-moo, git-native-core (for the error path / memory ownership contract tests), and Test2::V0 patterns. For every new helper, contract, or wrapper method, writes the matching test first."
 model: opus
-allowed-tools: Read, Edit, Write, Bash, Glob, Grep
 briefing:
   skills:
     - git-native-core

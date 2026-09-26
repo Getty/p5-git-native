@@ -2,7 +2,6 @@
 name: git-native-worker
 description: "Default Git::Native worker — implement, refactor, debug, and test the general wrapper surface (Repository, Reference, Branch, Tag, Tree, Blob, Commit, Revwalker, Config, Oid) plus the cross-cutting invariants (memory ownership, error handling, Moo hygiene, cpanfile versions, POD). For Remote/Credential/Clone and the FFI struct / credential-callback lane, delegate to git-native-network-worker. Leaves a commit-ready tree; never commits — commits belong to git-native-release-manager."
 model: opus
-allowed-tools: Read, Edit, Write, Bash, Glob, Grep
 briefing:
   skills:
     - git-native-core
