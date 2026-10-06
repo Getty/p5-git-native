@@ -1,0 +1,38 @@
+---
+claimed_at: 2026-10-06T19:41:29Z
+claimed_by: git-native-release-manager
+class: standard
+completed: 2026-10-06T19:41:29Z
+created: 2026-10-06T19:33:17Z
+id: 31
+priority: high
+started: 2026-10-06T19:33:27Z
+status: done
+tags:
+- release
+- prereqs
+- docs
+title: '0.007 pre-release fixes: declare FFI::Platypus, Path::Tiny to test prereqs,
+  agent-context docs'
+updated: 2026-10-06T19:41:29Z
+---
+
+From the 0.007 pre-release audit (2026-10-06).
+
+Worker (git-native-worker):
+- cpanfile: declare FFI::Platypus 2.00 (lib/ loads it directly: Repository.pm `use FFI::Platypus 2.00 ()`, ::Buffer in six modules, ::Memory in Remote.pm; today it only arrives through Git::Libgit2).
+- cpanfile: Path::Tiny is a runtime requires but nothing under lib/ loads it, only tests -> on test.
+- cpanfile: core modules used in lib/ but undeclared (Digest::SHA, MIME::Base64, Scalar::Util, Exporter) while Carp is declared - make it consistent per getty-perl-core.
+- POD: =seealso for Error, Repository, Remote::Result.
+
+Orchestrator (docs):
+- Maintainer decision: the agent context ships in 0.007 under misc/agent-context/ ([GatherAgentContext] from @Author::GETTY 0.326). dist.ini comment and Changes say otherwise - update both.
+- CLAUDE.md / release-manager agent / git-native-core skill: stale statements named by the audit.
+
+Then git-native-release-manager: commit, card -> done. No release.
+
+worker: cpanfile + three =seealso blocks edited (cpanfile, lib/Git/Native/{Error,Repository,Remote/Result}.pm). Evidence re-checked by grep: FFI::Platypus loaded directly in lib/ (Repository.pm:29 at 2.00, ::Buffer in 6 modules, ::Memory in Remote.pm); Path::Tiny not loaded anywhere under lib/, 16 test files use it. Verification (dzil build, META, podchecker, suite) still to run.
+
+Worker items done, tree commit-ready, nothing committed or staged. Changed: cpanfile (+FFI::Platypus 2.00, +Digest::SHA, +Exporter, +MIME::Base64, +Scalar::Util runtime; Path::Tiny runtime -> test) and =seealso in lib/Git/Native/Error.pm, Repository.pm, Remote/Result.pm (22 insertions, 1 deletion, 4 files). Verified by running: dzil build ok; built META.json has FFI::Platypus 2.00 under runtime requires and Path::Tiny under test requires; podchecker clean on the three built modules; prove -lr t/ = 51 files, 548 tests, PASS (t/40 + t/41 skipped, no TEST_GIT_NATIVE_SSH_URL / HTTPS_URL; in-file skips: t/35 ssh_key without TEST_GIT_NATIVE_SSH_KEY, t/69 subtest 9 no probeable /etc/gitconfig setting); same suite inside the built dist PASS. Build ran while dist.ini/Changes were being edited by the orchestrator - rebuild from the final tree before committing. 0.007 build dir + tarball removed. Core-module call (house rule is silent): declared the four lib/ loads, kept Carp; pragmas constant/overload left undeclared. Drift, not fixed (out of scope): tests load core Test::More (14 files), FindBin (14), File::Find (1) without an 'on test' entry, and 14 test files still use Test::More next to Test2::V0. Proposed subject: 'Declare FFI::Platypus and the core modules lib/ loads; Path::Tiny is a test prereq'.
+
+release-manager: committed locally, not pushed. f6edc2b Declare FFI::Platypus and the core modules lib/ loads; edb7b33 Add SEE ALSO to Error, Repository and Remote::Result; c4fe8d5 Say that the agent context ships as a snapshot; 5c32010 Correct stale statements in the agent context. Verified on the final tree before committing: dzil build ok, META runtime requires FFI::Platypus 2.00, Path::Tiny under test requires only; tarball has CLAUDE.md and .claude/ only under misc/agent-context/ (25 files, no settings.json, no *.local.json), snapshot CLAUDE.md byte-identical to the tree; prove -lr t = 51 files, 548 tests, PASS (skipped: t/40, t/41 whole file, t/35 test 7 ssh_key, t/69 one subtest with no probeable /etc/gitconfig setting). Changes: restored the 0.006 version line to nine-column padding, it had lost a space. 0.007 build dir and tarball removed. No release, no tag.
