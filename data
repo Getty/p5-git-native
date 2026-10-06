@@ -1,0 +1,20 @@
+---
+class: standard
+created: 2026-10-06T19:42:45Z
+id: 33
+priority: low
+status: backlog
+tags:
+- hygiene
+- deps
+- review-2026-10-06
+title: FFI::Platypus is used directly but missing from cpanfile
+updated: 2026-10-06T19:42:45Z
+---
+
+`lib/Git/Native/Repository.pm:14,29` (`use FFI::Platypus::Buffer`, `use FFI::Platypus 2.00 ()`), `lib/Git/Native/Remote.pm:14-15` (`FFI::Platypus::Buffer`, `FFI::Platypus::Memory`) and four more modules load FFI::Platypus themselves, including a version requirement. `cpanfile` lists only `Git::Libgit2`, `Moo`, `Path::Tiny`, `Throwable::Error`, `namespace::clean`, `Carp`. It installs today only because Git::Libgit2 pulls it in.
+
+Done when: `cpanfile` has `requires 'FFI::Platypus' => '2.00';`.
+
+---
+Fleet review 2026-10-06 · kind: hygiene · confidence: verified
