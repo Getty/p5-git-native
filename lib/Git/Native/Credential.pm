@@ -134,6 +134,9 @@ the token goes in C<password>, and which username the host expects varies
     passphrase  => 'hunter2',                          # optional
   );
 
+C<$ENV{HOME}> is not set under C<cmd.exe> and PowerShell on Windows; use
+C<$ENV{HOME} // $ENV{USERPROFILE}> for a path that has to work there.
+
 An on-disk key pair (C<git_credential_ssh_key_new>). C<username> and
 C<private_key> are required; C<public_key> may be left out, in which case
 libgit2 derives it from the private key, and C<passphrase> defaults to the

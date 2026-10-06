@@ -391,6 +391,53 @@ The consumer is `App::karr::Git::is_tracked_under`, which shelled out to
   the moment anyone else calls `->index`. Remove the `git_index_read` line and
   exactly two assertions in `t/74` go red (verified by commenting it out).
 
+## Windows
+
+Measured on Windows 11, Strawberry Perl 5.42, `Alien::Libgit2` 0.002 as a
+share install of libgit2 1.9.3. `prove -lr t` passes; run it from PowerShell
+or `cmd.exe`, not Git Bash, whose own `perl` is MSYS and has none of the
+prerequisites.
+
+- **`HOME` is unset under `cmd.exe` and PowerShell.** `Remote::_known_hosts_files`
+  is the one place that turns a home directory into paths: `HOME`, then
+  `USERPROFILE` on `MSWin32`, then the system-wide file (`/etc/ssh/…` or
+  `%PROGRAMDATA%\ssh\…`). It is a pure function of `%ENV` and `$^O`, and
+  `t/64-known-hosts-file.t` localises `$^O` to pin both platforms on every
+  CI. Do not write `"$ENV{HOME}/…"` anywhere else in `lib/`.
+- **`t/lib/TestRepo.pm` redirects `USERPROFILE` and `PROGRAMDATA` too** on
+  Windows, for the same reason it redirects `HOME`: otherwise the suite reads
+  the operator's real `known_hosts`.
+- **`file://` URLs:** `"file://$path"` is wrong for `C:/…` (libgit2: "failed
+  to resolve path"). Tests build them with `TestRepo::file_url($path)`.
+- **Skipped there, and why:** `t/72-owner-mismatch.t` — Perl reports uid 0
+  for the process and for every path. `t/75-cert-hostkey-layout.t` —
+  `Alien::Libgit2->cflags` answers
+  `-I\C:/Users/…/.cpanm/work/…/blib/…/include\`, the build directory with
+  stray backslashes, so the probe cannot find `git2.h` although
+  `dist_dir/include/git2.h` exists. That is Alien::Libgit2's to fix; the
+  runtime is unaffected because the DLL is found through `dynamic_libs`.
+- **HTTPS has no CA store.** `libgit2.dll` from the share install imports
+  `libssl-3-x64__.dll` / `libcrypto-3-x64__.dll` (Strawberry's OpenSSL, not
+  WinHTTP or Schannel), and `openssl version -d` answers
+  `Z:/extlib/_5040__/ssl`, a path of Strawberry's build machine. The
+  certificate callback gets `cert_type=1 valid=0` for github.com and the
+  fetch dies `user rejected certificate`. With `SSL_CERT_FILE` set in the
+  parent environment to `Mozilla::CA`'s `cacert.pem` or Git for Windows'
+  `ca-bundle.crt` it is `valid=1` and `t/41-remote-https.t` passes. Set via
+  `$ENV{SSL_CERT_FILE}` inside the process, before loading anything, it stays
+  `valid=0`. The lasting fix is in Alien::Libgit2 (a WinHTTP/Schannel build)
+  or a `GIT_OPT_SET_SSL_CERT_LOCATIONS` binding in Git::Libgit2, which does
+  not exist yet.
+- **SSH works with a key file.** `t/40-remote-ssh.t` passes from PowerShell
+  with no `HOME`, `TEST_GIT_NATIVE_SSH_KEY` pointing at
+  `%USERPROFILE%\.ssh\id_ed25519` and the host key found under
+  `%USERPROFILE%`. `ssh_agent` failed `remote rejected authentication: Failed
+  getting response` on a machine whose `ssh-agent` service is disabled - that
+  says nothing yet about a running agent.
+- **No Windows CI yet.** `.github/workflows/` has linux and macos only.
+- **Line endings:** `.gitattributes` pins LF; a CRLF checkout is not what
+  CPAN ships.
+
 ## Delegation
 
 Delegate behavior-relevant code to the right agent instead of touching it yourself —

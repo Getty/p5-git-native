@@ -300,6 +300,47 @@ C<git_repository_open> sees the change.
 
 =back
 
+=head1 WINDOWS
+
+The distribution runs on Windows with Strawberry Perl; its test suite
+passes there against the C<libgit2> that L<Alien::Libgit2> builds. Three
+things differ from a POSIX system:
+
+=over 4
+
+=item *
+
+B<There may be no C<HOME>.> C<cmd.exe> and PowerShell do not set it; Git
+Bash does. L<Git::Native::Remote> therefore looks for C<known_hosts> under
+C<%USERPROFILE%> as well, see L<Git::Native::Remote/DESCRIPTION>. A path
+you build yourself from C<$ENV{HOME}> - a key file for
+L<Git::Native::Credential/ssh_key>, say - needs the same fallback:
+
+  my $home = $ENV{HOME} // $ENV{USERPROFILE};
+
+=item *
+
+B<A C<file://> URL for a drive path needs three slashes.>
+C<file:///C:/repos/x.git> works; C<file://C:/repos/x.git> fails with
+C<failed to resolve path>.
+
+=item *
+
+B<HTTPS may need a CA bundle named in the environment.> A C<libgit2>
+built by L<Alien::Libgit2> under Strawberry Perl uses Strawberry's
+OpenSSL, whose compiled-in certificate directory does not exist on the
+machine. Every HTTPS remote then fails with C<user rejected certificate
+for E<lt>hostE<gt>>. C<SSL_CERT_FILE> pointing at a PEM bundle fixes it -
+the one L<Mozilla::CA> ships, or Git for Windows' F<ca-bundle.crt>:
+
+  set SSL_CERT_FILE=C:\Strawberry\perl\vendor\lib\Mozilla\CA\cacert.pem
+
+It has to be in the environment the process starts with. Assigning
+C<$ENV{SSL_CERT_FILE}> from Perl, even before L<Git::Native> is loaded,
+does not reach OpenSSL. SSH remotes are not affected.
+
+=back
+
 =seealso
 
 L<Alien::Libgit2>, L<Git::Libgit2>, L<FFI::Platypus>, L<libgit2|https://libgit2.org/>

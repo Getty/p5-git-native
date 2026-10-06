@@ -7,6 +7,9 @@ Revision history for Git-Native
     not in known_hosts there. Without any home directory only the
     system-wide file is read. The warning for an unknown host names the
     files that were searched.
+  - Windows is documented (Git::Native/WINDOWS, README): the missing HOME,
+    file:// URLs for drive paths, and the CA bundle HTTPS needs with a
+    Strawberry-built libgit2. The test suite passes there.
 
 0.006     2026-08-30 14:35:09Z
   - Remote: read the git_cert_hostkey field offsets from

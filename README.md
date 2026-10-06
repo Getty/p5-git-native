@@ -52,6 +52,23 @@ cpanm Git::Native
 
 `libgit2` itself is provided automatically through `Alien::Libgit2`.
 
+### Windows
+
+Works with Strawberry Perl, from `cmd.exe`, PowerShell and Git Bash alike.
+Things to know:
+
+- `cmd.exe` and PowerShell set no `HOME`. SSH host keys are looked up in
+  `%USERPROFILE%\.ssh\known_hosts` (and `known_hosts2`) as well, then in
+  `%PROGRAMDATA%\ssh\ssh_known_hosts`. For a key file path of your own use
+  `$ENV{HOME} // $ENV{USERPROFILE}`.
+- A `file://` URL for a drive path needs three slashes:
+  `file:///C:/repos/x.git`, not `file://C:/repos/x.git`.
+- HTTPS remotes fail with `user rejected certificate for <host>` when
+  `libgit2` was built by `Alien::Libgit2` under Strawberry Perl: its OpenSSL
+  has no CA store on the machine. Start the process with `SSL_CERT_FILE`
+  pointing at a PEM bundle, e.g. the one `Mozilla::CA` ships. Setting
+  `$ENV{SSL_CERT_FILE}` from inside Perl is too late. SSH is not affected.
+
 ## See also
 
 - [Git::Libgit2](https://metacpan.org/pod/Git::Libgit2) — the low-level FFI bindings layer
