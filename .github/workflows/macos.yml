@@ -39,12 +39,12 @@ jobs:
         run: perl -V
       - name: Install Dist::Zilla
         env:
-          PERL_CPANM_OPT: --mirror http://cpan.metacpan.org --mirror-only
+          PERL_CPANM_OPT: --mirror https://cpan.metacpan.org --mirror-only
         run: cpanm -nq Dist::Zilla
       - name: Install Alien::Libgit2 from sibling repo
         working-directory: vendor/alien-libgit2
         env:
-          PERL_CPANM_OPT: --mirror http://cpan.metacpan.org --mirror-only
+          PERL_CPANM_OPT: --mirror https://cpan.metacpan.org --mirror-only
         shell: bash
         run: |
           set -euo pipefail
@@ -54,7 +54,7 @@ jobs:
       - name: Install Git::Libgit2 from sibling repo
         working-directory: vendor/git-libgit2
         env:
-          PERL_CPANM_OPT: --mirror http://cpan.metacpan.org --mirror-only
+          PERL_CPANM_OPT: --mirror https://cpan.metacpan.org --mirror-only
         shell: bash
         run: |
           set -euo pipefail
