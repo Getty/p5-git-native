@@ -55,10 +55,11 @@ list before touching the matching code.
   `+refs/karr/*:refs/karr/*` with "not a valid reference". `Git::Native::Remote::push`
   expands patterns client-side via `_owner->reference_names(glob => ...)` and emits one
   concrete refspec per matching local ref. Fetch is unaffected (server-side enumeration).
-- **No native `--prune` on push.** Implemented by `_connect(DIRECTION_PUSH)` +
+- **No native `--prune` on push.** Implemented by `_connect(GIT_DIRECTION_FETCH)` +
   `git_remote_ls` + diffing remote heads against the expanded local set, then prepending
   `:refs/...` delete refspecs to the push call. `_connect` uses the credential callback,
-  so prune works against authenticated remotes.
+  so prune works against authenticated remotes. The direction is FETCH even on the push
+  path: `git_remote_ls` needs the ref advertisement, which upload-pack serves.
 - **Clone bare is not exposed.** `git_clone_options` embeds two large structs
   (`git_checkout_options`, `git_fetch_options`) before the `bare` field; the offset shifts
   across libgit2 versions. The wrapper errors on `bare => 1` and points users at

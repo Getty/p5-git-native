@@ -35,16 +35,18 @@ You never run `dzil release`. That gate is the maintainer's, explicitly.
 
 1. **`Changes`** — entry for the current version. Format matches the existing log style
    (look at the last 3-5 entries). Date is today's date. No "TBD" / placeholder text.
-2. **`$VERSION` in `lib/Git/Native.pm`** — matches the highest unreleased version in `Changes`.
-   `dist.ini` uses `[@Author::GETTY]` with `version_finder = :MainModule`, so the version is
-   read from `lib/Git/Native.pm`. Verify they line up.
+2. **`$VERSION` in every module under `lib/`** — each `.pm` carries its own
+   `our $VERSION`, and `[@Author::GETTY]` rewrites all of them on release (no
+   `version_finder`). Verify they all name the same next version, one above the last
+   release tag.
 3. **`cpanfile`** — every dependency pinned to its **latest released CPAN version**, not the
    version in any Getty-authored source repo. Run `cpanm --info Module::Name` for each. The
    Getty-authored ones to recheck on every release:
    - `Git::Libgit2` (this repo's foundation — `cpanm --info Git::Libgit2`)
+   - `FFI::Platypus` (loaded directly by `lib/`, not only through `Git::Libgit2`)
    - `Moo`
    - `Throwable::Error`
-   - `Path::Tiny`
+   - `Path::Tiny` (test only)
    - `Test2::V0` (test only)
    - `namespace::clean`
    - `Carp`
@@ -56,7 +58,7 @@ You never run `dzil release`. That gate is the maintainer's, explicitly.
    the last release have inline `=attr` / `=method` / `=seealso` PodWeaver directives in
    the `[@Author::GETTY]` style. Run `pod-writer` if any module needs its POD backfilled.
 7. **API surface review** — for every public method added/changed since the last release,
-   verify the docstring matches the actual signature. `git log v0.002..HEAD -- lib/` is the
+   verify the docstring matches the actual signature. `git log <last-tag>..HEAD -- lib/` (tags carry no `v`: `0.006`) is the
    search lens; any new method gets a doc audit.
 8. **libgit2 floor check** — confirm the listed `Alien::Libgit2` minimum supports every
    struct offset we depend on. The struct size margins (256/384/384) cover libgit2 1.5 → 1.9

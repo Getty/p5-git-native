@@ -65,6 +65,10 @@ Git::Native::Remote       ->url, ->name
                           ->fetch(refspecs =>, credentials =>, prune =>)
                           ->push(refspecs =>, credentials =>, prune =>)
                           ->list_refs(credentials =>)
+                          fetch / push return a Remote::Result
+Git::Native::Remote::Result  updated  -> [{ ref, from, to, reason }, ...]
+                          rejected -> [{ ref, reason }, ...]
+                          ->ok  true iff both are empty (a no-op, NOT "nothing failed")
 Git::Native::Credential   ->userpass / ->ssh_key / ->ssh_agent / ->default / ->username
 
 Git::Native::Revwalker    ->push_head / ->push_ref / ->push_oid / ->push_glob / ->push_range
@@ -118,7 +122,7 @@ make `is_invalid_spec` ambiguous between "your refname is bad" and "your OID
 string is bad" within a single call. `Oid` sets `@CARP_NOT` so the croak
 blames the caller's line rather than a line inside the distribution.
 
-**The ownership check does not surface as `GIT_EOWNER` by default.** libgit2
+**On libgit2 1.5.1 the ownership check does not surface as `GIT_EOWNER` by default.** libgit2
 validates that the repository's worktree is owned by the current user
 (CVE-2022-24765 analogue). Measured on 1.5.1: with a non-matching
 `safe.directory` entry `open` fails `GIT_EOWNER` (-36, `is_owner_mismatch`),
@@ -126,7 +130,9 @@ but with **no `safe.directory` entry at all** — the normal state — libgit2
 asks the config for the multivar, gets `GIT_ENOTFOUND` back and returns
 *that*. So the CI/container case reports a not-found naming a config key the
 user never set, and `is_not_found` answers, not `is_owner_mismatch`. Also on
-1.5.1: `safe.directory = *` is not honoured. Pinned in `t/72-owner-mismatch.t`,
+1.5.1: `safe.directory = *` is not honoured. Both are 1.5.1 behaviour, not
+libgit2's: measured on 1.9.3 the no-entry case returns `GIT_EOWNER` (-36) and
+`safe.directory = *` is honoured. Pinned in `t/72-owner-mismatch.t`,
 which reproduces a real `GIT_EOWNER` unprivileged by pointing `core.worktree`
 at a root-owned system directory — user namespaces cannot do it, an
 unprivileged namespace may map only your own uid.
@@ -144,7 +150,7 @@ unprivileged namespace may map only your own uid.
   + diffing remote heads against the expanded local set, then prepending
   `:refs/...` delete refspecs to the push call. `_connect` uses the credential
   callback too, so prune works against authenticated remotes. It connects with
-  `GIT_DIRECTION_FETCH` even on the push path (`Remote.pm:178`, the only
+  `GIT_DIRECTION_FETCH` even on the push path (`Remote.pm:182`, the only
   `_connect` call site): `git_remote_ls` needs the ref advertisement, which is
   what upload-pack serves. `GIT_DIRECTION_PUSH` is imported but unused. The
   distinction would only matter against a remote granting write without read
@@ -452,5 +458,6 @@ principle and lane are in `.claude/rules/git-native-rules.md`.
 | Commits, `Changes`, card → done, pre-release audit | `git-native-release-manager` |
 
 The agents carry their skills via `briefing.skills` (see `.claude/agents/`); the main
-agent delegates rather than loading them. Skill sources live under `.claude/skills/`,
-shared skills are hardlinked from `~/dev/perl/shared-skills/` and `~/dev/shared-skills/`.
+agent delegates rather than loading them. Only `git-native-core` is tracked under
+`.claude/skills/`; the shared skills are installed there by skilletor from the sources in
+`.claude/skilletor.json` and are git-ignored.
