@@ -1,0 +1,36 @@
+---
+class: standard
+created: 2026-10-06T19:42:40Z
+id: 32
+priority: high
+status: backlog
+tags:
+- bug
+- ffi
+- data-loss
+- review-2026-10-06
+title: blob_create_frombuffer truncates content that carries Perl's UTF-8 flag
+updated: 2026-10-06T19:42:40Z
+---
+
+`lib/Git/Native/Repository.pm:177-186`:
+
+    my ($content_p) = scalar_to_buffer($content);
+    check_rc Git::Libgit2::FFI::git_blob_create_from_buffer(
+      $oid_p, $self->_handle, $content_p, length($content),
+    );
+
+`scalar_to_buffer` hands out the scalar's internal byte buffer, `length($content)` counts **characters**. For a string with the UTF-8 flag set the buffer is longer than the character count, so libgit2 stores only the first `length` bytes and the blob is silently cut off - no error, a valid oid comes back.
+
+Reproduced on a fresh bare repo:
+
+    my $s = "\x{fc}\x{fc}\x{fc}\x{20ac}";        # 4 chars, 9 bytes as UTF-8
+    my $c = $r->blob($r->blob_create_frombuffer($s))->content;
+    # chars=4 utf8bytes=9 stored_bytes=4 stored=195.188.195.188
+
+The stored blob is the first four bytes (two of the four characters). It also hits pure Latin-1 text that merely got upgraded, e.g. after concatenation with a decoded string or JSON::MaybeXS output - the common case for file contents assembled in Perl.
+
+Done when: the length passed to libgit2 is the byte length of the buffer actually handed over (use the size `scalar_to_buffer` returns, or work on a copy that went through `utf8::downgrade` / croak on wide characters - decide and document which), and a test stores a UTF-8-flagged string and reads the identical bytes back.
+
+---
+Fleet review 2026-10-06 · kind: bug · confidence: verified
