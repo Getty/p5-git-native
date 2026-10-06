@@ -10,6 +10,9 @@ Revision history for Git-Native
   - Windows is documented (Git::Native/WINDOWS, README): the missing HOME,
     file:// URLs for drive paths, and the CA bundle HTTPS needs with a
     Strawberry-built libgit2. The test suite passes there.
+  - Prerequisites match what lib/ loads: FFI::Platypus 2.00, Digest::SHA,
+    Exporter, MIME::Base64 and Scalar::Util are declared, and Path::Tiny
+    is a test prerequisite only.
 
 0.006     2026-08-30 14:35:09Z
   - Remote: read the git_cert_hostkey field offsets from
