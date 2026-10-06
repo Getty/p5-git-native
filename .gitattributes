@@ -1,4 +1,3 @@
-# Line endings stay LF in every checkout, whatever core.autocrlf says: the
-# hooks are Python scripts with a shebang.
+# Line endings stay LF in every checkout, whatever core.autocrlf says: a
+# CRLF checkout is not what CPAN ships.
 * text=auto eol=lf
-*.exe binary
