@@ -10,6 +10,9 @@ Revision history for Git-Native
   - Windows is documented (Git::Native/WINDOWS, README): the missing HOME,
     file:// URLs for drive paths, and the CA bundle HTTPS needs with a
     Strawberry-built libgit2. The test suite passes there.
+  - The tarball carries a snapshot of the agent context under
+    misc/agent-context/ - CLAUDE.md and the agents, rules and skills this
+    release was built with. Nothing from it is installed.
   - Prerequisites match what lib/ loads: FFI::Platypus 2.00, Digest::SHA,
     Exporter, MIME::Base64 and Scalar::Util are declared, and Path::Tiny
     is a test prerequisite only.
