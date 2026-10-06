@@ -38,7 +38,7 @@ my $ref = $a->reference_create( 'refs/karr/test/data', $commit_oid, force => 1 )
 ok $ref, 'ref created in repo A';
 
 # Wire A → bare via file:// remote, push.
-my $url = 'file://' . $tmp_bare;
+my $url = TestRepo::file_url($tmp_bare);
 my $remote_a = $a->remote_create( 'origin', $url );
 is $remote_a->url, $url, 'remote A url roundtrip';
 

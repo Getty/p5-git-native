@@ -724,11 +724,36 @@ sub _verify_known_host {
        . "GIT_NATIVE_SSH_INSECURE=1 to bypass.\n";
   }
   else {
-    warn "Git::Native: ssh host '$host' is not in known_hosts. Run "
+    my @files = _known_hosts_files();
+    warn "Git::Native: ssh host '$host' is not in known_hosts (looked in "
+       . join( ', ', @files ) . "). Run "
        . "`ssh-keyscan $host >> ~/.ssh/known_hosts`, or set "
        . "GIT_NATIVE_SSH_INSECURE=1 to bypass.\n";
   }
   return 0;
+}
+
+# The known_hosts files to consult, the user's before the system-wide one.
+# The home directory is $HOME; on Windows %USERPROFILE% as well, because
+# cmd.exe and PowerShell set no HOME and OpenSSH for Windows keeps its files
+# under %USERPROFILE%\.ssh. Its system-wide file is %PROGRAMDATA%\ssh\
+# ssh_known_hosts there. Without a home directory only the system-wide file
+# is left.
+sub _known_hosts_files {
+  my $win = $^O eq 'MSWin32';
+  my ( @files, %seen );
+  for my $home ( $ENV{HOME}, $win ? $ENV{USERPROFILE} : () ) {
+    next unless defined $home && length $home;
+    next if $seen{$home}++;
+    CORE::push @files, "$home/.ssh/known_hosts", "$home/.ssh/known_hosts2";
+  }
+  if ( !$win ) {
+    CORE::push @files, '/etc/ssh/ssh_known_hosts';
+  }
+  elsif ( defined $ENV{PROGRAMDATA} && length $ENV{PROGRAMDATA} ) {
+    CORE::push @files, "$ENV{PROGRAMDATA}/ssh/ssh_known_hosts";
+  }
+  return @files;
 }
 
 # Scan the known_hosts files for $host and compare the cached key's digest to
@@ -737,11 +762,7 @@ sub _verify_known_host {
 sub _known_hosts_match {
   my ( $host, $digest, $want ) = @_;
   my $host_seen = 0;
-  for my $file (
-    "$ENV{HOME}/.ssh/known_hosts",
-    "$ENV{HOME}/.ssh/known_hosts2",
-    '/etc/ssh/ssh_known_hosts',
-  ) {
+  for my $file ( _known_hosts_files() ) {
     next unless -r $file;
     open my $fh, '<', $file or next;
     while ( my $line = <$fh> ) {
@@ -867,6 +888,13 @@ that is unknown, or whose cached key does not match, fails the connection
 with a warning naming the C<ssh-keyscan> command that would fix it; setting
 C<GIT_NATIVE_SSH_INSECURE=1> accepts any host key instead. HTTPS keeps
 libgit2's own CA validation.
+
+The files read are F<.ssh/known_hosts> and F<.ssh/known_hosts2> under
+C<$HOME>, then F</etc/ssh/ssh_known_hosts>. On Windows the home directory
+is C<%HOME%> and C<%USERPROFILE%> (both, when they differ), since
+C<cmd.exe> and PowerShell set no C<HOME>, and the system-wide file is
+F<%PROGRAMDATA%\ssh\ssh_known_hosts>. A host that is not found is reported
+together with the files that were searched.
 
 =method url / name
 

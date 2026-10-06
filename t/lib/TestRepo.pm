@@ -43,6 +43,7 @@ use Path::Tiny;
 #
 # t/69-config-isolation.t is the regression test for all of this.
 our $REAL_HOME;
+our %REAL_WINDOWS_ENV;
 our $HOME;
 our $SYSTEM_CONFIG_DIR;
 BEGIN {
@@ -60,6 +61,16 @@ BEGIN {
   # removes it on exit exactly like the test repos below.
   $HOME                 = Path::Tiny->tempdir('git-native-home-XXXXXXXX');
   $ENV{HOME}            = "$HOME";
+  # Windows: Git::Native::Remote reads %USERPROFILE%\.ssh\known_hosts and
+  # %PROGRAMDATA%\ssh\ssh_known_hosts too - the operator's real ones unless
+  # they are redirected like HOME. Live network tests restore them from
+  # %REAL_WINDOWS_ENV.
+  if ( $^O eq 'MSWin32' ) {
+    %REAL_WINDOWS_ENV = map { $_ => $ENV{$_} }
+      grep { defined $ENV{$_} } qw( USERPROFILE PROGRAMDATA );
+    $ENV{USERPROFILE} = "$HOME";
+    $ENV{PROGRAMDATA} = $HOME->child('programdata')->stringify;
+  }
   $ENV{XDG_CONFIG_HOME} = $HOME->child('.config')->stringify;
   # Stand-in for /etc: empty, but it exists so a test can plant a probe
   # gitconfig in it and watch the system level pick it up.
@@ -73,6 +84,14 @@ Git::Native->set_config_search_path(
   global      => "$HOME",
   xdg         => $ENV{XDG_CONFIG_HOME},
 );
+# A file:// URL for a local path. Appending the path to "file://" only works
+# where an absolute path starts with a slash: libgit2 fails to resolve
+# "file://C:/x". A drive path needs the third slash.
+sub file_url {
+  my $path = path(shift)->absolute->stringify;
+  $path = "/$path" unless $path =~ m{\A/};
+  return "file://$path";
+}
 sub new_repo {
   my $tmp  = Path::Tiny->tempdir;
   # Pin the default branch to 'main' so tests don't depend on libgit2's

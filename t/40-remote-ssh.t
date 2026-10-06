@@ -44,7 +44,12 @@ if ($key_path) {
 # follows HOME at all. TestRepo pins libgit2's system / global / xdg search
 # paths with Git::Native->set_config_search_path, which is process-global and
 # indifferent to $ENV{HOME} (t/69-config-isolation.t).
-$ENV{HOME} = $TestRepo::REAL_HOME if defined $TestRepo::REAL_HOME;
+#
+# On Windows there may have been no HOME to begin with: the throwaway one goes
+# away again, and the real %USERPROFILE% and %PROGRAMDATA% come back with it.
+if ( defined $TestRepo::REAL_HOME ) { $ENV{HOME} = $TestRepo::REAL_HOME }
+else                                { delete $ENV{HOME} }
+@ENV{ keys %TestRepo::REAL_WINDOWS_ENV } = values %TestRepo::REAL_WINDOWS_ENV;
 
 my $tmp = Path::Tiny->tempdir;
 my $repo = Git::Native->init("$tmp");

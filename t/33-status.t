@@ -58,11 +58,11 @@ my $sc = $src->commit_create( tree => $stb->write, parents => [], message => 'in
 $src->reference_create( 'refs/heads/main', $sc, force => 1 );
 
 my $bare = Git::Native->init( "$bare_dir", bare => 1, initial_branch => 'main' );
-$src->remote_create( 'origin', "file://$bare_dir" )
+$src->remote_create( 'origin', TestRepo::file_url($bare_dir) )
     ->push( refspecs => ['+refs/heads/main:refs/heads/main'] );
 $bare->set_head('refs/heads/main');
 
-my $clone = Git::Native->clone( "file://$bare_dir", "$clone_dir" );
+my $clone = Git::Native->clone( TestRepo::file_url($bare_dir), "$clone_dir" );
 is $clone->status_for_path('tracked.txt'), GIT_STATUS_CURRENT,
   'freshly checked-out file is clean (GIT_STATUS_CURRENT)';
 

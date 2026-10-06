@@ -27,7 +27,7 @@ $src->reference_create( 'refs/heads/main', $commit, force => 1 );
 # Make a bare repo with the ref so we have something clonable (clone wants
 # HEAD to resolve; a bare push from src sets it up cleanly).
 my $bare = Git::Native->init( "$tmp_bare", bare => 1, initial_branch => 'main' );
-my $remote = $src->remote_create( 'origin', "file://$tmp_bare" );
+my $remote = $src->remote_create( 'origin', TestRepo::file_url($tmp_bare) );
 $remote->push( refspecs => ['+refs/heads/main:refs/heads/main'] );
 
 # Pin the bare repo's HEAD at main so clone has a deterministic default
@@ -36,7 +36,7 @@ $remote->push( refspecs => ['+refs/heads/main:refs/heads/main'] );
 $bare->set_head('refs/heads/main');
 
 # Clone into dst.
-my $cloned = Git::Native->clone( "file://$tmp_bare", "$tmp_dst" );
+my $cloned = Git::Native->clone( TestRepo::file_url($tmp_bare), "$tmp_dst" );
 isa_ok $cloned, 'Git::Native::Repository', 'clone returns Repository';
 ok !$cloned->is_bare, 'clone is not bare by default';
 ok -d $tmp_dst->child('.git'), 'cloned .git exists';

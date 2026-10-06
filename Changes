@@ -1,6 +1,12 @@
 Revision history for Git-Native
 
 {{$NEXT}}
+  - Remote: on Windows SSH host keys are looked up under %USERPROFILE% as
+    well as %HOME%, and system-wide in %PROGRAMDATA%\ssh\ssh_known_hosts.
+    cmd.exe and PowerShell set no HOME, so every SSH host was reported as
+    not in known_hosts there. Without any home directory only the
+    system-wide file is read. The warning for an unknown host names the
+    files that were searched.
 
 0.006     2026-08-30 14:35:09Z
   - Remote: read the git_cert_hostkey field offsets from

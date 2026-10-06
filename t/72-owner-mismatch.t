@@ -25,6 +25,12 @@ use Path::Tiny qw( path );
 # report the same id for `id -u` and for a file of ours. `--map-auto` needs
 # the newuidmap helper, which is not part of a base install.
 
+# Perl on Windows has no uids: $> is 0 and stat() reports uid 0 for every
+# path, so the check below would call this "running as root".
+skip_all 'Windows: Perl sees uid 0 for the process and for every path, so the '
+  . 'ownership mismatch this test builds cannot be expressed'
+  if $^O eq 'MSWin32';
+
 skip_all 'running as root: a root-owned path matches euid 0, so no ownership '
   . 'mismatch is reachable this way'
   if $> == 0;

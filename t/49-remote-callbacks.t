@@ -52,13 +52,13 @@ my $commit_a  = $seed->commit_create(
   tree => $seed_tree, parents => [], message => 'upstream tip A',
 );
 $seed->reference_create( 'refs/karr/test/data', $commit_a, force => 1 );
-my $seed_remote = $seed->remote_create( 'origin', 'file://' . $tmp_bare );
+my $seed_remote = $seed->remote_create( 'origin', TestRepo::file_url($tmp_bare) );
 $seed_remote->push( refspecs => ['+refs/karr/*:refs/karr/*'] );
 
 # Fresh client fetches it for the first time. update_tips must fire.
 my $tmp_client = Path::Tiny->tempdir;
 my $client     = Git::Native->init("$tmp_client");
-my $client_remote = $client->remote_create( 'origin', 'file://' . $tmp_bare );
+my $client_remote = $client->remote_create( 'origin', TestRepo::file_url($tmp_bare) );
 
 my $fetch_result = $client_remote->fetch(
   refspecs => ['+refs/karr/*:refs/karr/*'],
@@ -91,7 +91,7 @@ is scalar @{ $r_noop->updated }, 0,
 # fires: the ref lands in $updated with reason "".
 my $tmp_pp = Path::Tiny->tempdir;
 my $pp = Git::Native->init("$tmp_pp");
-my $pp_rmt = $pp->remote_create( 'origin', 'file://' . $tmp_bare );
+my $pp_rmt = $pp->remote_create( 'origin', TestRepo::file_url($tmp_bare) );
 $pp_rmt->fetch( refspecs => ['+refs/karr/*:refs/karr/*'] );
 # Push the same tip back. Fast-forward, accepted.
 my $push_result = $pp_rmt->push(
@@ -254,7 +254,7 @@ subtest '_push_update_targets maps destination refnames to local oids' => sub {
 subtest 'a deleted ref is reported with to => undef on push and on fetch' => sub {
   my $tmp_db  = Path::Tiny->tempdir;
   my $db_bare = Git::Native->init( "$tmp_db", bare => 1 );
-  my $url     = 'file://' . $tmp_db;
+  my $url     = TestRepo::file_url($tmp_db);
 
   my $tmp_src = Path::Tiny->tempdir;
   my $src     = Git::Native->init("$tmp_src");
@@ -338,7 +338,7 @@ sub fetch_in_nested_scope {
   };
   return $kept;
 }
-my $nested = fetch_in_nested_scope( 'file://' . $tmp_bare );
+my $nested = fetch_in_nested_scope( TestRepo::file_url($tmp_bare) );
 ok $nested, 'fetch in nested scope completes without segfault';
 ok scalar @{ $nested->updated } >= 1,
   'nested-scope fetch still recorded updates';

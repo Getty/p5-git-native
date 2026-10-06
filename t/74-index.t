@@ -62,7 +62,7 @@ my $commit = $src->commit_create(
 $src->reference_create( 'refs/heads/main', $commit, force => 1 );
 
 my $bare = Git::Native->init( "$bare_dir", bare => 1, initial_branch => 'main' );
-$src->remote_create( 'origin', "file://$bare_dir" )
+$src->remote_create( 'origin', TestRepo::file_url($bare_dir) )
   ->push( refspecs => ['+refs/heads/main:refs/heads/main'] );
 $bare->set_head('refs/heads/main');
 
@@ -76,7 +76,7 @@ my @KEEP;
 sub fresh_clone {
   my $dir = Path::Tiny->tempdir;
   push @KEEP, $dir;
-  return ( Git::Native->clone( "file://$bare_dir", "$dir" ), $dir );
+  return ( Git::Native->clone( TestRepo::file_url($bare_dir), "$dir" ), $dir );
 }
 
 # Read-only subtests share one clone; every subtest that touches the working

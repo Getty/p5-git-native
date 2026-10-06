@@ -18,6 +18,12 @@ use Git::Native::Remote ();
 # warnings), and @revoked / @cert-authority lines that must never count as a
 # match.
 
+# The matcher reads %USERPROFILE% and %PROGRAMDATA% as well on Windows. Take
+# both away so that only the throwaway HOME of each subtest is searched and
+# the operator's real known_hosts stays out; the subtests about those two
+# variables set their own.
+delete @ENV{qw( USERPROFILE PROGRAMDATA )};
+
 my $HOST = 'unit-test-host.invalid';
 
 # A synthetic SSH key blob; known_hosts stores it base64-encoded, and the
@@ -161,6 +167,57 @@ subtest 'a HOME with no .ssh directory is not an error' => sub {
   );
   is $matched, 0, 'no known_hosts anywhere -> no match';
   is $seen, 0, 'and no entries seen, rather than a die on the missing file';
+};
+
+# Which files are searched is its own pure function. $^O is localised, so
+# every platform's CI pins both answers.
+subtest 'the files searched on a POSIX system' => sub {
+  local $^O = 'linux';
+  local @ENV{qw( HOME USERPROFILE PROGRAMDATA )} = ( '/home/u', '/elsewhere', '/pd' );
+  is [ Git::Native::Remote::_known_hosts_files() ],
+    [ '/home/u/.ssh/known_hosts', '/home/u/.ssh/known_hosts2', '/etc/ssh/ssh_known_hosts' ],
+    'HOME, then /etc/ssh; USERPROFILE and PROGRAMDATA mean nothing here';
+
+  delete local $ENV{HOME};
+  is [ Git::Native::Remote::_known_hosts_files() ], ['/etc/ssh/ssh_known_hosts'],
+    'without HOME only the system-wide file is left, not /.ssh/known_hosts';
+};
+
+subtest 'the files searched on Windows' => sub {
+  local $^O = 'MSWin32';
+  local @ENV{qw( USERPROFILE PROGRAMDATA )} = ( 'C:\Users\u', 'C:\ProgramData' );
+  {
+    delete local $ENV{HOME};
+    is [ Git::Native::Remote::_known_hosts_files() ],
+      [ 'C:\Users\u/.ssh/known_hosts', 'C:\Users\u/.ssh/known_hosts2',
+        'C:\ProgramData/ssh/ssh_known_hosts' ],
+      'no HOME, as under cmd.exe and PowerShell: USERPROFILE is the home directory';
+  }
+  {
+    local $ENV{HOME} = 'C:\msys\home\u';
+    is [ Git::Native::Remote::_known_hosts_files() ],
+      [ 'C:\msys\home\u/.ssh/known_hosts', 'C:\msys\home\u/.ssh/known_hosts2',
+        'C:\Users\u/.ssh/known_hosts', 'C:\Users\u/.ssh/known_hosts2',
+        'C:\ProgramData/ssh/ssh_known_hosts' ],
+      'a differing HOME is searched first, USERPROFILE after it';
+  }
+  {
+    local $ENV{HOME} = 'C:\Users\u';
+    is scalar( () = Git::Native::Remote::_known_hosts_files() ), 3,
+      'HOME equal to USERPROFILE is searched once';
+  }
+};
+
+subtest 'an entry under USERPROFILE is found on Windows without HOME' => sub {
+  my $profile = Path::Tiny->tempdir;
+  $profile->child('.ssh')->mkpath;
+  $profile->child( '.ssh', 'known_hosts' )->spew_utf8("$HOST ssh-ed25519 $key64\n");
+
+  local $^O = 'MSWin32';
+  local $ENV{USERPROFILE} = "$profile";
+  delete local $ENV{HOME};
+  my ($matched) = Git::Native::Remote::_known_hosts_match( $HOST, 'sha1', sha1($key) );
+  is $matched, 1, 'the key cached under USERPROFILE authorises the host';
 };
 
 done_testing;
