@@ -165,4 +165,8 @@ arrives. The second quirk: C<safe.directory = *>, the blanket escape hatch git
 honours, is B<not> honoured by libgit2 1.5.1 — the path has to be listed
 literally.
 
+=seealso
+
+L<Git::Native>, L<Git::Libgit2::Error>, L<Throwable::Error>
+
 =cut

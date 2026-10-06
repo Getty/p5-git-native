@@ -1095,4 +1095,12 @@ C<Git::Native E<lt>unconfigured@example.invalidE<gt>> rather than failing, so
 C<commit_create> and C<tag_create> still work in an unconfigured environment.
 Pass an explicit C<author> / C<tagger> where that placeholder would be wrong.
 
+=seealso
+
+L<Git::Native>, L<Git::Native::Reference>, L<Git::Native::Branch>,
+L<Git::Native::Tag>, L<Git::Native::Commit>, L<Git::Native::Tree>,
+L<Git::Native::TreeBuilder>, L<Git::Native::Blob>, L<Git::Native::Index>,
+L<Git::Native::Config>, L<Git::Native::Remote>, L<Git::Native::Revwalker>,
+L<Git::Native::Signature>, L<Git::Native::Oid>, L<Git::Native::Error>
+
 =cut

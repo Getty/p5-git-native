@@ -139,4 +139,8 @@ reports all N in C<updated> and is therefore B<not> C<ok> — the check for
 "did anything go wrong" is C<< @{ $result->rejected } >>, and C<ok> answers
 the different question "was this a no-op?".
 
+=seealso
+
+L<Git::Native::Remote>
+
 =cut
