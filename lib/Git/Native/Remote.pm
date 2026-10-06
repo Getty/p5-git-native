@@ -114,6 +114,7 @@ sub fetch {
 
   my ( $opts_ptr, $opts_keep ) = _build_fetch_options(
     $args{credentials}, $args{prune}, $tips_thunk,
+    $self->_ssh_port(GIT_DIRECTION_FETCH),
   );
 
   my $rc = Git::Libgit2::FFI::git_remote_fetch(
@@ -161,7 +162,7 @@ sub push {
   my ( $sa_ptr, $sa_keep ) = _build_strarray( $refspecs_ref );
 
   my ( $opts_ptr, $opts_keep ) = _build_push_options(
-    $args{credentials}, $push_thunk,
+    $args{credentials}, $push_thunk, $self->_ssh_port(GIT_DIRECTION_PUSH),
   );
 
   my $rc = Git::Libgit2::FFI::git_remote_push(
@@ -224,7 +225,7 @@ sub _connect {
     memcpy( $cb_ptr + CALLBACKS_CRED_OFFSET, $pkt_p, 8 );
     CORE::push @keep, \$pkt;
   }
-  _install_certcheck( $cb_ptr, 0, \@keep );
+  _install_certcheck( $cb_ptr, 0, \@keep, $self->_ssh_port($direction) );
   check_rc Git::Libgit2::FFI::git_remote_connect(
     $self->_handle, $direction, $cb_ptr, 0, 0,
   );
@@ -336,7 +337,7 @@ sub _build_strarray {
 }
 
 sub _build_fetch_options {
-  my ( $cred_cb, $prune, $update_tips_thunk ) = @_;
+  my ( $cred_cb, $prune, $update_tips_thunk, $ssh_port ) = @_;
 
   my $opts = "\0" x FETCH_OPTIONS_SIZE;
   my ($opts_ptr) = scalar_to_buffer($opts);
@@ -361,7 +362,9 @@ sub _build_fetch_options {
     CORE::push @keep, \$cb_buf;
   }
 
-  _install_certcheck( $opts_ptr, FETCH_OPTS_CALLBACKS_OFFSET, \@keep );
+  _install_certcheck(
+    $opts_ptr, FETCH_OPTS_CALLBACKS_OFFSET, \@keep, $ssh_port,
+  );
 
   if ($update_tips_thunk) {
     my $ptr_val = Git::Libgit2::FFI::ffi->cast(
@@ -386,7 +389,7 @@ sub _build_fetch_options {
 }
 
 sub _build_push_options {
-  my ( $cred_cb, $push_update_thunk ) = @_;
+  my ( $cred_cb, $push_update_thunk, $ssh_port ) = @_;
 
   my $opts = "\0" x PUSH_OPTIONS_SIZE;
   my ($opts_ptr) = scalar_to_buffer($opts);
@@ -410,7 +413,9 @@ sub _build_push_options {
     CORE::push @keep, \$cb_buf;
   }
 
-  _install_certcheck( $opts_ptr, PUSH_OPTS_CALLBACKS_OFFSET, \@keep );
+  _install_certcheck(
+    $opts_ptr, PUSH_OPTS_CALLBACKS_OFFSET, \@keep, $ssh_port,
+  );
 
   if ($push_update_thunk) {
     my $ptr_val = Git::Libgit2::FFI::ffi->cast(
@@ -636,6 +641,9 @@ sub _local_oid_hex {
 # Write a certificate_check closure into a callbacks struct. $cb_base is the
 # offset of the embedded git_remote_callbacks within $struct_ptr (0 for a
 # bare callbacks struct, 8 for fetch/push options). Pushes keepalives.
+# $ssh_port is the port the operation connects to (see _ssh_port): libgit2
+# passes the callback the host name only, and known_hosts files a host under
+# its port.
 #
 # libgit2 1.5.x + libssh2 has NO built-in known_hosts checking (that landed in
 # 1.7). Without a certificate_check callback the ssh transport rejects every
@@ -643,8 +651,8 @@ sub _local_oid_hex {
 # So we always install one and verify the hostkey against ~/.ssh/known_hosts
 # ourselves, mirroring what the `git` CLI does via OpenSSH.
 sub _install_certcheck {
-  my ( $struct_ptr, $cb_base, $keep ) = @_;
-  my ( $thunk, $thunk_keep ) = _make_certcheck_thunk();
+  my ( $struct_ptr, $cb_base, $keep, $ssh_port ) = @_;
+  my ( $thunk, $thunk_keep ) = _make_certcheck_thunk($ssh_port);
   CORE::push @$keep, @$thunk_keep;
   my $ptr_val = Git::Libgit2::FFI::ffi->cast(
     'git_transport_certificate_check_cb' => 'opaque', $thunk,
@@ -665,6 +673,7 @@ sub _install_certcheck {
 # remotes keep their normal CA validation. For SSH (git_cert_hostkey) we verify
 # against known_hosts unless GIT_NATIVE_SSH_INSECURE is set (accept-all).
 sub _make_certcheck_thunk {
+  my ($ssh_port) = @_;
   my $ffi = Git::Libgit2::FFI::ffi();
   my $closure = $ffi->closure(sub {
     my ( $cert_ptr, $valid, $host, $payload ) = @_;
@@ -673,7 +682,7 @@ sub _make_certcheck_thunk {
       return $valid ? 1 : 0 if $cert_type == GIT_CERT_X509;
       if ( $cert_type == GIT_CERT_HOSTKEY_LIBSSH2 ) {
         return 1 if $ENV{GIT_NATIVE_SSH_INSECURE};
-        return _verify_known_host( $cert_ptr, $host );
+        return _verify_known_host( $cert_ptr, $host, $ssh_port );
       }
       # Unknown cert kind — fall back to libgit2's own verdict.
       return $valid ? 1 : 0;
@@ -689,9 +698,11 @@ sub _make_certcheck_thunk {
 
 # Verify an ssh hostkey against known_hosts using the SHA256 (preferred) or
 # SHA1 fingerprint libssh2 computed for the negotiated key. Returns 1 on a
-# match, 0 otherwise (with an actionable warning).
+# match, 0 otherwise (with an actionable warning). The warnings name the host
+# the way known_hosts files it for $port, since that is the entry to look for.
 sub _verify_known_host {
-  my ( $cert_ptr, $host ) = @_;
+  my ( $cert_ptr, $host, $port ) = @_;
+  my $name = _known_hosts_name( $host, $port );
   # The git_cert_hostkey field offsets come from Git::Libgit2 (derived from
   # the ABI, karr #30); t/75-cert-hostkey-layout.t cross-checks them against
   # offsetof() wherever a C compiler is available.
@@ -708,29 +719,93 @@ sub _verify_known_host {
     $want   = _peek_bytes( $cert_ptr + $off{sha1}, 20 );
   }
   else {
-    warn "Git::Native: ssh hostkey for '$host' offers no SHA1/SHA256 "
+    warn "Git::Native: ssh hostkey for '$name' offers no SHA1/SHA256 "
        . "fingerprint to verify; rejecting\n";
     return 0;
   }
 
-  my ( $matched, $host_seen ) = _known_hosts_match( $host, $digest, $want );
+  my ( $matched, $host_seen, $revoked )
+    = _known_hosts_match( $host, $digest, $want, $port );
   return 1 if $matched;
 
-  if ($host_seen) {
-    warn "Git::Native: ssh hostkey for '$host' did NOT match the "
+  # ssh-keyscan writes the [host]:port form itself when given the port.
+  my $keyscan = 'ssh-keyscan '
+    . ( $name eq $host ? '' : "-p $port " ) . $host;
+
+  if ($revoked) {
+    # No way around this one is offered: the key was taken out of service on
+    # purpose, and a fresh ssh-keyscan would only fetch it again.
+    warn "Git::Native: ssh hostkey for '$name' is marked \@revoked in "
+       . "known_hosts; rejecting.\n";
+  }
+  elsif ($host_seen) {
+    warn "Git::Native: ssh hostkey for '$name' did NOT match the "
        . "$host_seen known_hosts entr" . ( $host_seen == 1 ? 'y' : 'ies' )
        . " for it — server offered a key type you have not cached, or the "
-       . "key changed. Run `ssh-keyscan $host >> ~/.ssh/known_hosts`, or set "
+       . "key changed. Run `$keyscan >> ~/.ssh/known_hosts`, or set "
        . "GIT_NATIVE_SSH_INSECURE=1 to bypass.\n";
   }
   else {
     my @files = _known_hosts_files();
-    warn "Git::Native: ssh host '$host' is not in known_hosts (looked in "
+    warn "Git::Native: ssh host '$name' is not in known_hosts (looked in "
        . join( ', ', @files ) . "). Run "
-       . "`ssh-keyscan $host >> ~/.ssh/known_hosts`, or set "
+       . "`$keyscan >> ~/.ssh/known_hosts`, or set "
        . "GIT_NATIVE_SSH_INSECURE=1 to bypass.\n";
   }
   return 0;
+}
+
+# The port an SSH connection in $direction goes to: that of the push URL for
+# a push when one is configured, of the URL otherwise. libgit2 has applied
+# url.*.insteadOf to both by the time it hands them out.
+sub _ssh_port {
+  my ( $self, $direction ) = @_;
+  my $url;
+  $url = $self->_pushurl if $direction == GIT_DIRECTION_PUSH;
+  $url //= $self->url;
+  return _ssh_port_from_url($url);
+}
+
+# git_remote_pushurl is not among the functions Git::Libgit2::FFI attaches;
+# it is only needed here, so it is looked up on first use. undef when the
+# remote has no push URL of its own.
+my $pushurl_fn;
+sub _pushurl {
+  my ($self) = @_;
+  $pushurl_fn //= Git::Libgit2::FFI::ffi()->function(
+    git_remote_pushurl => ['git_remote'] => 'string',
+  );
+  return $pushurl_fn->call( $self->_handle );
+}
+
+# Port of an SSH remote URL, 22 unless the URL names another one. The forms
+# are the ones libgit2 parses: ssh://[user@]host[:port]/path (also git+ssh://
+# and ssh+git://), and the scp-like [user@]host:path, which carries a port
+# only in the bracketed spelling [user@host:port]:path. An IPv6 address sits
+# in brackets of its own, so its colons are never taken for a port. Anything
+# else (https://, file://, a local path) never reaches the host-key check and
+# gets the default.
+sub _ssh_port_from_url {
+  my ($url) = @_;
+  return 22 unless defined $url;
+  my $host = qr/(?:\[[^\]]*\]|[^:\/\[\]]*)/;
+  my $port;
+  if ( $url =~ m{\A(?:ssh|git\+ssh|ssh\+git)://}i ) {
+    ($port) = $url =~ m{\A[^:]+://(?:[^@/]*@)?$host:(\d+)(?:/|\z)};
+  }
+  else {
+    ($port) = $url =~ m{\A\[(?:[^@/\[\]]*@)?$host:(\d+)\]:};
+  }
+  return $port ? $port + 0 : 22;
+}
+
+# The name known_hosts files a host under, as OpenSSH writes it: the bare
+# host name on the default port, [host]:port on any other. Hashed entries
+# carry the HMAC of this same string.
+sub _known_hosts_name {
+  my ( $host, $port ) = @_;
+  return $host if !$port || $port == 22;
+  return "[$host]:$port";
 }
 
 # The known_hosts files to consult, the user's before the system-wide one.
@@ -756,12 +831,37 @@ sub _known_hosts_files {
   return @files;
 }
 
-# Scan the known_hosts files for $host and compare the cached key's digest to
-# $want. Returns (matched, host_line_count): host_line_count distinguishes
-# "host unknown" from "host known but key mismatch".
+# Is the key with digest $want the cached one for $host on $port (22 when
+# omitted)? Returns (matched, host_line_count, revoked): host_line_count
+# distinguishes "host unknown" from "host known but key mismatch".
+#
+# A port other than 22 with nothing filed under [host]:port is looked up once
+# more under the bare host name, as OpenSSH does: the same sshd reached on a
+# second port offers the key already cached for the first. That only ever
+# drops the port, and only for a port nothing is known about - an entry for
+# [host]:port with another key is a mismatch and stays one, and a miss leaves
+# the host unknown on that port. The offered key's type is not known here,
+# only its fingerprint, so "nothing" means no entry of any key type.
 sub _known_hosts_match {
-  my ( $host, $digest, $want ) = @_;
-  my $host_seen = 0;
+  my ( $host, $digest, $want, $port ) = @_;
+  my $name = _known_hosts_name( $host, $port );
+  my ( $matched, $host_seen, $revoked )
+    = _known_hosts_scan( $name, $digest, $want );
+  return ( $matched, $host_seen, $revoked )
+    if $name eq $host || $host_seen || $revoked;
+
+  ( $matched, $host_seen, $revoked ) = _known_hosts_scan( $host, $digest, $want );
+  return ( $matched, $matched ? $host_seen : 0, $revoked );
+}
+
+# Scan the known_hosts files for the entries of $name - a host as
+# _known_hosts_name spells it - and compare each cached key's digest to
+# $want. Returns (matched, host_line_count, revoked). A key that a @revoked
+# line lists for the host never matches, whatever the other lines say - so
+# every file is read to the end rather than stopping at the first hit.
+sub _known_hosts_scan {
+  my ( $name, $digest, $want ) = @_;
+  my ( $matched, $revoked, $host_seen ) = ( 0, 0, 0 );
   for my $file ( _known_hosts_files() ) {
     next unless -r $file;
     open my $fh, '<', $file or next;
@@ -771,41 +871,54 @@ sub _known_hosts_match {
       my @parts = split ' ', $line;
       my $marker = ( @parts && $parts[0] =~ /\A\@/ ) ? shift @parts : '';
       next if @parts < 3;
-      next if $marker eq '@cert-authority' || $marker eq '@revoked';
+      next if $marker eq '@cert-authority';
+      my $is_revoked = $marker eq '@revoked';
       my ( $hosts, undef, $key64 ) = @parts;
-      next unless _host_in_field( $host, $hosts );
-      $host_seen++;
+      next unless _host_in_field( $name, $hosts );
+      $host_seen++ unless $is_revoked;
       my $blob = decode_base64($key64);
       next unless length $blob;
       my $got = $digest eq 'sha256' ? sha256($blob) : sha1($blob);
-      return ( 1, $host_seen ) if $got eq $want;
+      next unless $got eq $want;
+      if ($is_revoked) { $revoked = 1 }
+      else             { $matched = 1 }
     }
     close $fh;
   }
-  return ( 0, $host_seen );
+  return ( ( $matched && !$revoked ) ? 1 : 0, $host_seen, $revoked );
 }
 
-# Does $host match a known_hosts host field? Handles hashed (|1|salt|hash via
-# HMAC-SHA1), plain comma lists, [host]:port, and * / ? wildcards.
+# Does $name - a host as _known_hosts_name spells it - match a known_hosts
+# host field? Handles hashed (|1|salt|hash via HMAC-SHA1), plain comma lists,
+# [host]:port, * / ? wildcards and !negation. The port is part of the name
+# and of the pattern, so both are compared as written: "[host]:2222" is that
+# host on port 2222 only. Only "[host]:22" and "[host]" are folded to the
+# bare name, being the default port spelled out. A negated pattern that
+# matches takes the host out of the entry wherever it stands in the list.
 sub _host_in_field {
-  my ( $host, $field ) = @_;
+  my ( $name, $field ) = @_;
   if ( $field =~ /\A\|1\|([^|]+)\|(.+)\z/ ) {
     my ( $salt64, $hash64 ) = ( $1, $2 );
-    my $got = encode_base64( hmac_sha1( $host, decode_base64($salt64) ), '' );
+    my $got = encode_base64( hmac_sha1( $name, decode_base64($salt64) ), '' );
     return $got eq $hash64;
   }
+  my $found = 0;
   for my $pat ( split /,/, $field ) {
     next if $pat eq '';
-    $pat = $1 if $pat =~ /\A\[([^\]]+)\](?::\d+)?\z/;
-    return 1 if lc $pat eq lc $host;
-    if ( $pat =~ /[*?]/ ) {
+    my $negated = $pat =~ s/\A!//;
+    $pat = $1 if $pat =~ /\A\[([^\]]+)\](?::22)?\z/;
+    my $hit = lc $pat eq lc $name;
+    if ( !$hit && $pat =~ /[*?]/ ) {
       my $re = quotemeta $pat;
       $re =~ s/\\\*/.*/g;
       $re =~ s/\\\?/./g;
-      return 1 if $host =~ /\A$re\z/i;
+      $hit = $name =~ /\A$re\z/i;
     }
+    next unless $hit;
+    return 0 if $negated;
+    $found = 1;
   }
-  return 0;
+  return $found;
 }
 
 sub DEMOLISH {
@@ -888,6 +1001,25 @@ that is unknown, or whose cached key does not match, fails the connection
 with a warning naming the C<ssh-keyscan> command that would fix it; setting
 C<GIT_NATIVE_SSH_INSECURE=1> accepts any host key instead. HTTPS keeps
 libgit2's own CA validation.
+
+A host is looked up the way OpenSSH files it: under its bare name on port
+22, and as C<[host]:port> on any other port, in plain and in hashed
+(C<HashKnownHosts>) entries alike. The port is that of the URL the
+operation connects to - the push URL for a push, if the remote has one.
+
+An entry for C<[host]:2222> counts for that port only, never for port 22
+or another port, and a different key in it is a mismatch. Only when
+nothing at all is filed under C<[host]:port> is the key looked up once
+more under the bare host name, and accepted if that entry carries exactly
+this key - as OpenSSH does for one C<sshd> reachable on two ports. The
+C<ssh-keyscan> command in the warning carries the port
+(C<ssh-keyscan -p 2222 host>).
+
+A host list may exclude hosts with C<!pattern>, and a key that an
+C<@revoked> line lists for the host is rejected even when another line
+still carries it; both hold for the lookup under the bare host name as
+well. C<@cert-authority> lines are ignored - host certificates are not
+supported.
 
 The files read are F<.ssh/known_hosts> and F<.ssh/known_hosts2> under
 C<$HOME>, then F</etc/ssh/ssh_known_hosts>. On Windows the home directory

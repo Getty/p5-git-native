@@ -243,7 +243,9 @@ env vars locally.
 
 Pure-logic helpers that reimplement git semantics in Perl get their own
 network-free unit tests, so a regression shows up without a live remote:
-`t/43-known-hosts.t` (known_hosts host-field matching), `t/44-push-refspec-expand.t`
+`t/43-known-hosts.t` (known_hosts host-field matching), `t/77-known-hosts-port.t`
+(the port in the known_hosts name, from the remote URL down to the callback),
+`t/44-push-refspec-expand.t`
 (`Remote::_expand_push_refspecs` — libgit2 doesn't expand push wildcards,
 we do). `t/45-oid.t` pins the `Git::Native::Oid` value contract (hex<->raw,
 `short`, and the `""`/`eq` overloads — `eq` must match an Oid's hex string).

@@ -1,6 +1,14 @@
 Revision history for Git-Native
 
 {{$NEXT}}
+  - Remote: the SSH host-key check looks a host up as OpenSSH files it in
+    known_hosts - the bare name on port 22, [host]:port on any other,
+    hashed or plain, with the port of the URL (the push URL for a push).
+    A port with no entry falls back to the bare host's key; an entry for
+    [host]:port counts for that port only. Warnings suggest ssh-keyscan -p.
+  - Remote: in known_hosts a negated pattern (!host) excludes the host
+    from its entry, and a key listed in a @revoked line for the host is
+    rejected even if another line carries it.
   - Remote: on Windows SSH host keys are looked up under %USERPROFILE% as
     well as %HOME%, and system-wide in %PROGRAMDATA%\ssh\ssh_known_hosts.
     cmd.exe and PowerShell set no HOME, so every SSH host was reported as

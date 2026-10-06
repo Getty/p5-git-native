@@ -109,6 +109,32 @@ subtest '@revoked and @cert-authority never count as a match' => sub {
   }
 };
 
+subtest 'a @revoked key is rejected even where another line trusts it' => sub {
+  # @revoked is a verdict about the key, not a line to skip: a key listed
+  # there must not be accepted because an ordinary entry - before or after
+  # it, typically an old one nobody cleaned up - still carries it.
+  for my $content (
+    "$HOST ssh-ed25519 $key64\n\@revoked $HOST ssh-ed25519 $key64\n",
+    "\@revoked * ssh-ed25519 $key64\n$HOST ssh-ed25519 $key64\n",
+  ) {
+    my ( $matched, $seen, $revoked ) = match_against($content);
+    is $matched, 0, 'the revoked key is not accepted';
+    is $seen, 1, 'the ordinary entry still counts for the host';
+    is $revoked, 1, 'and the caller is told the key is revoked';
+  }
+
+  my ( $matched, $seen, $revoked ) = match_against(
+    "$HOST ssh-ed25519 $key64\n\@revoked $HOST ssh-ed25519 $other64\n",
+  );
+  is $matched, 1, 'revoking a different key leaves the cached one valid';
+  is $revoked, 0, 'and nothing is reported as revoked';
+
+  ( $matched, $seen, $revoked ) = match_against(
+    "$HOST ssh-ed25519 $key64\n\@revoked other.invalid ssh-ed25519 $key64\n",
+  );
+  is $matched, 1, 'a revocation for another host does not apply';
+};
+
 subtest 'an unparsable key field is skipped, but the host still counts' => sub {
   # '!!!' is not base64; decode_base64 gives an empty blob. The line must be
   # skipped rather than compared against the digest of the empty string, but

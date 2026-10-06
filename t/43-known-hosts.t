@@ -41,6 +41,20 @@ ok host_in_field( 'host1', 'host?' ),                'wildcard ? matches';
 ok host_in_field( 'GitHub.com', 'github.com' ),
   'host matching is case-insensitive';
 
+# A negated pattern takes a host out of the entry again, wherever it stands
+# in the list - without it "*.example.com,!bad.example.com" would hand the
+# wildcard's key to exactly the host the line excludes.
+ok host_in_field( 'good.example.com', '*.example.com,!bad.example.com' ),
+  'a negated pattern leaves the other hosts of the list alone';
+ok !host_in_field( 'bad.example.com', '*.example.com,!bad.example.com' ),
+  'a negated pattern excludes its host';
+ok !host_in_field( 'bad.example.com', '!bad.example.com,*.example.com' ),
+  'the negation wins regardless of its position';
+ok !host_in_field( 'a.example.com', '!*.example.com,a.example.com' ),
+  'a negated wildcard excludes too';
+ok !host_in_field( 'good.example.com', '!bad.example.com' ),
+  'a negation alone matches nothing';
+
 # _known_hosts_match: an unknown host yields (matched=0, host_seen=0) even
 # against the operator's real known_hosts.
 my ( $matched, $seen )
