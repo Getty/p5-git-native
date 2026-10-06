@@ -1,0 +1,4 @@
+# Line endings stay LF in every checkout, whatever core.autocrlf says: the
+# hooks are Python scripts with a shebang.
+* text=auto eol=lf
+*.exe binary
