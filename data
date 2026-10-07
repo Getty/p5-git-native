@@ -1,0 +1,44 @@
+---
+class: standard
+created: 2026-10-07T16:18:34Z
+id: 34
+priority: high
+status: backlog
+tags:
+- transport
+- push
+- ffi
+title: Bind git_remote_callbacks.push_negotiation so a push can be vetoed from the
+  remote's advertised oids (force-with-lease)
+updated: 2026-10-07T16:18:34Z
+---
+
+`Git::Native::Remote->push` binds `credentials`, `certificate_check`,
+`update_tips` and `push_update_reference` of `git_remote_callbacks`, but not
+`push_negotiation` (offset 80 in the 1.5.x layout, between
+`push_update_reference` at 72 and `transport` at 88):
+
+    int (*git_push_negotiation)(const git_push_update **updates, size_t len, void *payload);
+    typedef struct { char *src_refname; char *dst_refname; git_oid src; git_oid dst; } git_push_update;
+
+It runs after the remote advertised its refs and before anything is sent;
+`src` is the remote's current target for the ref, `dst` the one about to be
+written, and a non-zero return aborts the push. That is the only place a
+libgit2 caller can implement what `git push --force-with-lease` does: push a
+forced update only if the remote ref still holds the value the caller
+expects. libgit2 has no lease option of its own.
+
+Needed by App::karr (its k322): karr's board push is a forced refspec, and two
+clones writing in the same pull->write->push window overwrite each other
+silently. The fix is a lease per ref against karr's tracking mirror, and with
+the native transport there is nothing to hang it on.
+
+Done when:
+- `push( ..., negotiation => sub { my (@updates) = @_; ... } )` is called with
+  one `{ src_refname, dst_refname, src, dst }` per update (oids as hex, a
+  zero oid as undef), and a false return or an exception aborts the push with
+  a Git::Native::Error the caller can tell apart from a transport failure;
+- the offset is covered the way the other callback offsets are (t/75-style
+  layout check where the header is available);
+- a test pushes against a local bare remote twice, the second time with the
+  remote ref moved in between, and the callback sees the moved `src`.
