@@ -114,6 +114,22 @@ before pinning the layout.
 - Live network tests (`t/40-remote-ssh.t`, `t/41-remote-https.t`) skip unless the matching
   env var is set. Don't make them required.
 
+## The wrapper surface and the lane that owns it
+
+The rules file names the lanes; this is the detailed split. When a change touches two lanes,
+it is handed off to the owning worker — the delegation lock says the same in short form.
+
+| Lane | Surface |
+|---|---|
+| `git-native-worker` (default) | General local-repo wrappers: `Repository` (commit_create / object / tree / tree_builder / blob_create_frombuffer / config / signature_default), `Reference` (resolve / set_target / symbolic_set_target), `Branch`, `Tag`, `Tree`, `TreeBuilder`, `Blob`, `Commit`, `Revwalker`, `Config`, `Oid`, `Signature`, `Error` |
+| `git-native-network-worker` | Phase 4 + FFI struct margins: `Remote`, `Credential`, `Git::Native->clone`, fetch / push / list_refs, the credential-callback closure lifetime, the push-wildcard expansion, `--prune`-on-push, `git_remote_callbacks` / `git_fetch_options` / `git_push_options` struct layouts, known_hosts parsing, live network tests |
+| `git-native-phase5-worker` | General-purpose surface: clone (no-bare / no-auth-callback quirks), status / status_for_path (`git_status_foreach` with closure), `tag()` undef-on-lightweight, `tag_names()` walker, refname validation, head_detached / set_head, branch listings |
+| `git-native-test-writer` | Writes and extends the tests for all of the above |
+| `git-native-release-manager` | Pre-release audit. Advisory only, never `dzil release` |
+
+The libgit2 quirks of each surface are listed under *libgit2 quirks that are not negotiable*
+above — read the matching entry before touching the matching code.
+
 ## Conventions not in CLAUDE.md (project-local)
 
 - **Moo, not Moose.** `has ... => ( is => 'ro', lazy => 1, builder => '_build_x' )` is

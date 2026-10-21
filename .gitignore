@@ -74,6 +74,9 @@ Git-Native-*/
 Git-Native-*.tar.gz
 AGENTS.md
 
+# git worktrees for feature work -- never commit
+/.claude/worktrees/
+
 # skilletor: committe Config + Ignore-Block
 !.claude/skilletor.json
 !.claude/.gitignore
