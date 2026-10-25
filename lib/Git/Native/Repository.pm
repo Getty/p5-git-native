@@ -176,11 +176,19 @@ sub reference_symbolic_create {
 
 sub blob_create_frombuffer {
   my ( $self, $content ) = @_;
+  # A blob is bytes. Work on a copy so the caller's scalar keeps its flag, and
+  # downgrade it so the buffer handed over holds one byte per character; the
+  # size passed on is the one scalar_to_buffer reports for that very buffer.
+  my $bytes = $content;
+  utf8::downgrade( $bytes, 1 )
+    or Carp::croak(
+      'blob_create_frombuffer: wide character in content, '
+      . 'encode it to bytes first' );
   my $raw = "\0" x 20;
-  my ($oid_p)     = scalar_to_buffer($raw);
-  my ($content_p) = scalar_to_buffer($content);
+  my ($oid_p) = scalar_to_buffer($raw);
+  my ( $content_p, $content_len ) = scalar_to_buffer($bytes);
   check_rc Git::Libgit2::FFI::git_blob_create_from_buffer(
-    $oid_p, $self->_handle, $content_p, length($content),
+    $oid_p, $self->_handle, $content_p, $content_len,
   );
   return Git::Native::Oid->from_raw($raw);
 }
@@ -862,6 +870,11 @@ same way as C<blob>.
 
 Write a blob straight from a Perl scalar into the object database and return
 its L<Git::Native::Oid>. Index and working directory are untouched.
+
+A blob is bytes: every character of C<$content> is stored as one byte, whether
+or not Perl's UTF-8 flag is set on the string. A character above C<0xFF> has no
+single-byte form, so the method croaks rather than guess an encoding - encode
+text yourself (C<Encode::encode('UTF-8', $text)>) before storing it.
 
 =method tree_builder
 

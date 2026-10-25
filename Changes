@@ -1,6 +1,11 @@
 Revision history for Git-Native
 
 {{$NEXT}}
+  - Repository: blob_create_frombuffer stores a string with Perl's UTF-8
+    flag set whole. It used to hand libgit2 the internal UTF-8 buffer but
+    the character count as length, so the blob was silently cut off and a
+    valid oid came back. Each character is now stored as one byte; a
+    character above 0xFF croaks, since a blob has no encoding to guess.
   - Remote: the SSH host-key check looks a host up as OpenSSH files it in
     known_hosts - the bare name on port 22, [host]:port on any other,
     hashed or plain, with the port of the URL (the push URL for a push).
