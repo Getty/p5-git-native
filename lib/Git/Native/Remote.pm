@@ -7,7 +7,7 @@ use Carp ();
 use Scalar::Util ();
 use Git::Libgit2::FFI ();
 use Git::Libgit2 qw(
-  oid_to_hex GIT_PASSTHROUGH GIT_DIRECTION_FETCH GIT_DIRECTION_PUSH
+  oid_to_hex GIT_PASSTHROUGH GIT_EUSER GIT_DIRECTION_FETCH GIT_DIRECTION_PUSH
   fetch_options_prune_offset cert_hostkey_offsets
 );
 use Git::Native::Error qw( check_rc );
@@ -37,6 +37,13 @@ use Digest::SHA qw( sha1 sha256 hmac_sha1 );
   eval {
     $ffi->type(
       '(string, string, opaque)->int' => 'git_push_update_reference_cb',
+    );
+  };
+  # git_remote_callbacks.push_negotiation:
+  #   int (*)(const git_push_update **updates, size_t len, void *payload)
+  eval {
+    $ffi->type(
+      '(opaque, size_t, opaque)->int' => 'git_push_negotiation_cb',
     );
   };
 }
@@ -69,7 +76,15 @@ use constant {
   CALLBACKS_CERTCHECK_OFFSET         => 32,   # certificate_check cb pointer
   CALLBACKS_UPDATE_TIPS_OFFSET       => 48,   # update_tips cb pointer
   CALLBACKS_PUSH_UPDATE_REF_OFFSET   => 72,   # push_update_reference cb pointer
+  CALLBACKS_PUSH_NEGOTIATION_OFFSET  => 80,   # push_negotiation cb pointer
   CALLBACKS_PAYLOAD_OFFSET           => 104,  # payload void*
+
+  # git_push_update: char *src_refname, char *dst_refname, git_oid src,
+  # git_oid dst (20 bytes each, no padding between them).
+  PUSH_UPDATE_SRC_REFNAME_OFFSET => 0,
+  PUSH_UPDATE_DST_REFNAME_OFFSET => 8,
+  PUSH_UPDATE_SRC_OID_OFFSET     => 16,
+  PUSH_UPDATE_DST_OID_OFFSET     => 36,
 
   # git_cert_t (cert.cert_type @ offset 0)
   GIT_CERT_X509            => 1,
@@ -159,15 +174,34 @@ sub push {
     \@rejected, \@updated, $self->_push_update_targets($refspecs_ref),
   );
 
+  # negotiation: the caller's veto. $neg_state->{called} / {error} tell a
+  # veto from a transport failure once git_remote_push has returned.
+  my ( $neg_thunk, $neg_keep, $neg_state );
+  if ( $args{negotiation} ) {
+    $neg_state = {};
+    ( $neg_thunk, $neg_keep ) =
+      _make_push_negotiation_thunk( $args{negotiation}, $neg_state );
+  }
+
   my ( $sa_ptr, $sa_keep ) = _build_strarray( $refspecs_ref );
 
   my ( $opts_ptr, $opts_keep ) = _build_push_options(
     $args{credentials}, $push_thunk, $self->_ssh_port(GIT_DIRECTION_PUSH),
+    $neg_thunk,
   );
 
   my $rc = Git::Libgit2::FFI::git_remote_push(
     $self->_handle, $sa_ptr, $opts_ptr,
   );
+  # Only a veto of ours gets the GIT_EUSER treatment: libgit2 reports a
+  # non-zero callback return as the callback's own value and leaves no useful
+  # message behind, so the error is built here instead of via check_rc.
+  if ( $neg_state && $neg_state->{vetoed} ) {
+    Git::Native::Error->throw(
+      code    => GIT_EUSER,
+      message => $neg_state->{error} // 'push aborted by the negotiation callback',
+    );
+  }
   check_rc $rc;
 
   return Git::Native::Remote::Result->new(
@@ -389,7 +423,7 @@ sub _build_fetch_options {
 }
 
 sub _build_push_options {
-  my ( $cred_cb, $push_update_thunk, $ssh_port ) = @_;
+  my ( $cred_cb, $push_update_thunk, $ssh_port, $negotiation_thunk ) = @_;
 
   my $opts = "\0" x PUSH_OPTIONS_SIZE;
   my ($opts_ptr) = scalar_to_buffer($opts);
@@ -425,6 +459,17 @@ sub _build_push_options {
     my ($bp) = scalar_to_buffer($buf);
     memcpy( $opts_ptr + PUSH_OPTS_CALLBACKS_OFFSET
             + CALLBACKS_PUSH_UPDATE_REF_OFFSET, $bp, 8 );
+    CORE::push @keep, \$buf;
+  }
+
+  if ($negotiation_thunk) {
+    my $ptr_val = Git::Libgit2::FFI::ffi->cast(
+      'git_push_negotiation_cb' => 'opaque', $negotiation_thunk,
+    );
+    my $buf = pack 'J', $ptr_val;
+    my ($bp) = scalar_to_buffer($buf);
+    memcpy( $opts_ptr + PUSH_OPTS_CALLBACKS_OFFSET
+            + CALLBACKS_PUSH_NEGOTIATION_OFFSET, $bp, 8 );
     CORE::push @keep, \$buf;
   }
 
@@ -593,6 +638,56 @@ sub _make_push_update_thunk {
     return 0;
   });
   return ( $closure, [ \$closure ] );
+}
+
+# Build the push_negotiation closure (git_remote_callbacks.push_negotiation).
+# Calls $user_cb with one { src_refname, dst_refname, src, dst } hash per
+# update, oids as hex with the zero oid as undef. A false return or an
+# exception is a veto: the closure answers GIT_EUSER, which makes libgit2
+# abort before anything is sent, and records it in $state so Remote->push can
+# raise it as a Git::Native::Error rather than a generic transport failure.
+#
+#   int cb(const git_push_update **updates, size_t len, void *payload)
+#
+# Like every thunk it must not die into libgit2's C frames.
+sub _make_push_negotiation_thunk {
+  my ( $user_cb, $state ) = @_;
+  my $ffi = Git::Libgit2::FFI::ffi();
+  my $closure = $ffi->closure(sub {
+    my ( $updates_ptr, $len, $payload ) = @_;
+    my $verdict = eval {
+      my @updates;
+      for my $i ( 0 .. $len - 1 ) {
+        my $u = unpack 'J', _peek_bytes( $updates_ptr + $i * PTR_SIZE, PTR_SIZE );
+        CORE::push @updates, {
+          src_refname => _peek_cstring( $u + PUSH_UPDATE_SRC_REFNAME_OFFSET ),
+          dst_refname => _peek_cstring( $u + PUSH_UPDATE_DST_REFNAME_OFFSET ),
+          src         => _oid_hex_if_nonzero( $u + PUSH_UPDATE_SRC_OID_OFFSET ),
+          dst         => _oid_hex_if_nonzero( $u + PUSH_UPDATE_DST_OID_OFFSET ),
+        };
+      }
+      $user_cb->(@updates) ? 1 : 0;
+    };
+    if ( !defined $verdict ) {
+      my $err = $@;
+      $err =~ s/\s+\z//;
+      $state->{error} = "push negotiation callback died: $err";
+      $verdict = 0;
+    }
+    return 0 if $verdict;
+    $state->{vetoed} = 1;
+    $state->{error} //= 'push aborted by the negotiation callback';
+    return GIT_EUSER;
+  });
+  return ( $closure, [ \$closure ] );
+}
+
+# The string a char* stored at $addr points to, or undef for NULL.
+sub _peek_cstring {
+  my ($addr) = @_;
+  my $ptr = unpack 'J', _peek_bytes( $addr, PTR_SIZE );
+  return undef unless $ptr;
+  return Git::Libgit2::FFI::ffi()->cast( 'opaque' => 'string', $ptr );
 }
 
 # Map each expanded push refspec's destination refname to the oid the push
@@ -1087,6 +1182,7 @@ C<fetch>.
   my $result = $remote->push(
     refspecs    => ['+refs/karr/*:refs/karr/*'],
     credentials => \&creds,
+    negotiation => sub { my (@updates) = @_; ... },
   );
   die join ', ', map { "$_->{ref}: $_->{reason}" } @{ $result->rejected }
     if @{ $result->rejected };
@@ -1141,6 +1237,25 @@ refspecs — a concrete C<a:b> refspec spans no namespace to diff. The extra
 connection uses the same C<credentials> callback, and the deleted refs are
 reported in C<< $result->updated >> alongside the refs that were written,
 distinguishable by their C<< to => undef >>.
+
+C<negotiation> is the hook for what C<git push --force-with-lease> does,
+which libgit2 has no option for. The coderef runs once, after the remote has
+advertised its refs and before anything is sent, with one hash per ref the
+push is about to write:
+
+  { src_refname => 'refs/karr/x', dst_refname => 'refs/karr/x',
+    src => $remote_oid_hex_or_undef, dst => $new_oid_hex_or_undef }
+
+C<src> is what the B<remote> holds for the ref right now (C<undef> when it
+does not exist there yet), C<dst> what the push writes (C<undef> for a
+delete); both are hex. A false return or an exception aborts the push before
+any object is sent, and C<push> throws a L<Git::Native::Error> with code
+C<GIT_EUSER> (-7) whose message names the callback, or carries the exception
+text. libgit2 never raises C<GIT_EUSER> for a transport problem of its own
+here, so C<< $err->code == GIT_EUSER >> tells a veto from a failed
+connection. Compare each C<src> against the value you expect to implement a
+lease. The hook is exercised against C<file://> remotes; the network transports
+are not covered by the test suite.
 
 =method list_refs
 

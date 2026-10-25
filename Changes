@@ -1,6 +1,12 @@
 Revision history for Git-Native
 
 {{$NEXT}}
+  - Remote: push takes a negotiation callback, called after the remote
+    advertised its refs and before anything is sent, with the remote's
+    current value (src) and the new one (dst) of every ref about to be
+    written. A false return or an exception aborts the push with a
+    Git::Native::Error of code GIT_EUSER, so a caller can implement the
+    equivalent of git push --force-with-lease, which libgit2 lacks.
   - Repository: blob_create_frombuffer stores a string with Perl's UTF-8
     flag set whole. It used to hand libgit2 the internal UTF-8 buffer but
     the character count as length, so the blob was silently cut off and a
