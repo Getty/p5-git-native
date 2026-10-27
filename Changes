@@ -1,6 +1,10 @@
 Revision history for Git-Native
 
 {{$NEXT}}
+  - Oid: from_buffer($bytes, $type) computes the oid of a Perl buffer as a
+    blob, tree, commit or tag, the same as git hash-object -t TYPE, with no
+    repository and nothing written. The buffer is bytes (NUL included); a
+    character above 0xFF and an unknown type croak. (GitHub issue 2)
   - Remote: push takes a negotiation callback, called after the remote
     advertised its refs and before anything is sent, with the remote's
     current value (src) and the new one (dst) of every ref about to be

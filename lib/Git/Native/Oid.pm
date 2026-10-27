@@ -6,6 +6,7 @@ use Moo;
 use Carp ();
 use Git::Libgit2 qw( oid_from_hex oid_to_hex );
 use Git::Libgit2::FFI ();
+use Git::Native::Error qw( check_rc );
 use FFI::Platypus::Buffer qw( scalar_to_buffer );
 
 # Every wrapper method that accepts "Oid|hex" funnels the caller's string in
@@ -61,6 +62,45 @@ sub from_raw {
   Carp::croak 'Git::Native::Oid->from_raw requires exactly 20 bytes of raw OID, got '
     . ( defined $raw ? length($raw) . ' bytes' : 'undef' )
     unless defined $raw && length($raw) == 20;
+  return $class->new( raw => $raw );
+}
+
+# git_odb_hash is not among the functions Git::Libgit2::FFI attaches; it is
+# only needed here, so it is looked up on first use. It is the long-standing
+# libgit2 call for hashing a buffer (the newer git_object_id_from_buffer is
+# the same operation but needs a newer libgit2 than the one this distribution
+# runs against). Neither needs a repository or writes anything.
+my $odb_hash_fn;
+my %OBJECT_TYPE = (
+  commit => Git::Libgit2::GIT_OBJECT_COMMIT(),
+  tree   => Git::Libgit2::GIT_OBJECT_TREE(),
+  blob   => Git::Libgit2::GIT_OBJECT_BLOB(),
+  tag    => Git::Libgit2::GIT_OBJECT_TAG(),
+);
+
+sub from_buffer {
+  my ( $class, $buffer, $type ) = @_;
+  Carp::croak 'Git::Native::Oid->from_buffer requires a buffer of bytes'
+    unless defined $buffer && !ref $buffer;
+  Carp::croak 'Git::Native::Oid->from_buffer requires an object type ('
+    . join( ', ', sort keys %OBJECT_TYPE ) . ')'
+    unless defined $type;
+  my $type_id = $OBJECT_TYPE{$type}
+    or Carp::croak "Git::Native::Oid->from_buffer: unknown object type '$type', "
+      . 'expected one of: ' . join( ', ', sort keys %OBJECT_TYPE );
+  # The hash is over bytes. Work on a copy so the caller's scalar keeps its
+  # flag, and downgrade it so the buffer holds one byte per character.
+  my $bytes = $buffer;
+  utf8::downgrade( $bytes, 1 )
+    or Carp::croak 'Git::Native::Oid->from_buffer: wide character in buffer, '
+      . 'encode it to bytes first';
+  $odb_hash_fn //= Git::Libgit2::FFI::ffi()->function(
+    git_odb_hash => [ 'opaque', 'opaque', 'size_t', 'int' ] => 'int',
+  );
+  my $raw = "\0" x 20;
+  my ($oid_p) = scalar_to_buffer($raw);
+  my ( $data_p, $len ) = scalar_to_buffer($bytes);
+  check_rc $odb_hash_fn->call( $oid_p, $data_p, $len, $type_id );
   return $class->new( raw => $raw );
 }
 
@@ -183,6 +223,31 @@ branch on because libgit2 never said anything about it.
 
 Build an Oid from exactly 20 binary bytes; croaks on any other length, and on
 C<undef>. A caller error like L</from_hex>'s, and a croak for the same reason.
+
+=method from_buffer
+
+  my $oid = Git::Native::Oid->from_buffer( "hello\n", 'blob' );
+  say $oid;   # ce013625030ba8dba906f756967f9e9ca394464a
+
+Compute the OID git would give an object of the given type with this content,
+without a repository and without writing anything — the same result as
+C<git hash-object -t blob --stdin>. The type is one of C<blob>, C<tree>,
+C<commit> or C<tag>, and is required. The buffer is the object's body, bytes
+as they would be stored: for a C<tree> that is the binary entry list, for a
+C<commit> the header lines and message. It is not validated as a well-formed
+tree or commit, only hashed. An empty buffer is fine.
+
+The buffer is B<bytes>: NUL bytes are part of the content, and a string with
+Perl's UTF-8 flag set is hashed as one byte per character. A character above
+0xFF has no single-byte form and croaks (encode the string first, e.g. with
+C<Encode::encode('UTF-8', $text)>), as does an unknown or missing type, or
+an C<undef> or reference as the buffer. These are caller errors and croak like
+L</from_hex>'s, blaming the caller's line.
+
+To store the object as well, use
+L<Git::Native::Repository/blob_create_frombuffer> or the tree builder; they
+return the same OID. Backed by libgit2's C<git_odb_hash>, which every libgit2
+this distribution supports has.
 
 =method from_ptr
 

@@ -82,6 +82,7 @@ Git::Native::Signature    name, email, when, offset
                           ->from_handle($ptr)  adopts a libgit2-allocated
                           git_signature*, copying the fields out of the struct
 Git::Native::Oid          stringify hex, ->raw (20B), ->short(7), ->from_hex / ->from_raw / ->from_ptr
+                          ->from_buffer($bytes, $type)  git hash-object, no repo, git_odb_hash
 Git::Native::Error        isa Throwable::Error; code, klass, message
                           is_not_found / is_exists / is_auth / is_certificate /
                           is_conflict / is_not_fast_forward / is_unborn_branch / is_invalid_spec
