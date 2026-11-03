@@ -62,4 +62,4 @@ jobs:
           dzil listdeps --author --missing | cpanm -nq
           dzil install
       - name: dzil test
-        uses: Getty/p5-dist-zilla-pluginbundle-author-getty/.github/actions/dzil-test@main
+        uses: Getty/p5-dist-zilla-pluginbundle-author-getty/.github/actions/dzil-test@v1

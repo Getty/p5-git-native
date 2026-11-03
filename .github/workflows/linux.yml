@@ -78,7 +78,7 @@ jobs:
           dzil listdeps --author --missing | cpanm -nq
           dzil install
       - name: dzil test
-        uses: Getty/p5-dist-zilla-pluginbundle-author-getty/.github/actions/dzil-test@main
+        uses: Getty/p5-dist-zilla-pluginbundle-author-getty/.github/actions/dzil-test@v1
 
   # The debian jobs install Alien::Libgit2 and Git::Libgit2 from the sibling
   # repos' HEAD, so they never resolve the dependency chain from CPAN: a
@@ -119,4 +119,4 @@ jobs:
           # cpanfile floor; cpanm then fails if CPAN cannot satisfy it.
           dzil listdeps --author --missing | cpanm -nq
       - name: dzil test
-        uses: Getty/p5-dist-zilla-pluginbundle-author-getty/.github/actions/dzil-test@main
+        uses: Getty/p5-dist-zilla-pluginbundle-author-getty/.github/actions/dzil-test@v1
