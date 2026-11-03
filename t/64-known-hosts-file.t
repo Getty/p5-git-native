@@ -1,3 +1,4 @@
+#!/usr/bin/env perl
 use Test2::V0;
 use Path::Tiny;
 use MIME::Base64 qw( encode_base64 );

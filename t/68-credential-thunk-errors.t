@@ -1,3 +1,4 @@
+#!/usr/bin/env perl
 use Test2::V0;
 use Git::Libgit2 qw( init_lib oid_from_hex );
 use Git::Native::Remote ();
