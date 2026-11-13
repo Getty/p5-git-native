@@ -450,7 +450,7 @@ prerequisites.
 ## Delegation
 
 Delegate behavior-relevant code to the right agent instead of touching it yourself —
-principle in the shared rule `getty-agent-delegation` (skilletor bundle
+principle in the shared rule `agent-delegation` (skilletor bundle
 `getty-cpan-dist@getty`), lanes and hazards in `.claude/rules/git-native-rules.md`.
 
 | Task | Agent |
