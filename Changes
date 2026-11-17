@@ -43,7 +43,7 @@ Revision history for Git-Native
     Git::Native::Remote::Result.
   - Requires Git::Libgit2 0.008 (git_stash_save, git_odb_new and the size_t
     counts of git_merge_base_many and git_merge_analysis bound as libgit2
-    declares them).
+    declares them); the tests require Alien::Libgit2 0.003.
 
 0.006     2026-08-30 14:35:09Z
   - Remote: read the git_cert_hostkey field offsets from
