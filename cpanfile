@@ -3,7 +3,7 @@ requires 'Carp';
 requires 'Digest::SHA';
 requires 'Exporter';
 requires 'FFI::Platypus'     => '2.00';
-requires 'Git::Libgit2'      => '0.007';
+requires 'Git::Libgit2'      => '0.008';
 requires 'MIME::Base64';
 requires 'Moo'               => '2.000000';
 requires 'Scalar::Util';

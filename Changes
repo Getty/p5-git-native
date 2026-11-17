@@ -41,6 +41,9 @@ Revision history for Git-Native
     is a test prerequisite only.
   - SEE ALSO sections for Git::Native::Error, Git::Native::Repository and
     Git::Native::Remote::Result.
+  - Requires Git::Libgit2 0.008 (git_stash_save, git_odb_new and the size_t
+    counts of git_merge_base_many and git_merge_analysis bound as libgit2
+    declares them).
 
 0.006     2026-08-30 14:35:09Z
   - Remote: read the git_cert_hostkey field offsets from
