@@ -1,0 +1,24 @@
+---
+class: standard
+completed: 2026-11-21T18:22:34Z
+created: 2026-11-21T03:15:02Z
+id: 42
+priority: medium
+started: 2026-11-21T18:22:34Z
+status: done
+tags:
+- docs
+title: CLAUDE.md and Remote.pm comment behind the 0.007 surface
+updated: 2026-11-21T18:22:34Z
+---
+
+Found in the 0.007 pre-release audit.
+
+- CLAUDE.md class layout: `->push(refspecs =>, credentials =>, prune =>)` lacks `negotiation =>`.
+- Test Hygiene says nothing about t/78-t/81. t/80 is a compile-time offsetof probe like t/75 (skips without compiler/header); on Windows it likely skips for the same Alien::Libgit2 cflags reason as t/75 - the Windows skip list does not mention it.
+- Ticket ids written the old way: "karr #30", "karr ticket 23", "karr ticket 13" -> k30, k23, k13.
+- lib/Git/Native/Remote.pm:144: the comment above `sub push` leaves out `negotiation` (comment only, but worker lane).
+
+CLAUDE.md is prose (main agent); the Remote.pm comment goes to git-native-network-worker.
+
+Committed in b52fee0: push comment and negotiation-state comment in Remote.pm; CLAUDE.md class layout (negotiation =>), Test Hygiene paragraph on t/78-t/81, Windows skip note for t/80 (not measured), kNN ids. The t/83 paragraph in CLAUDE.md went with k37 (20dd43e).
