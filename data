@@ -1,0 +1,20 @@
+---
+class: standard
+completed: 2026-11-21T18:22:48Z
+created: 2026-11-21T03:15:08Z
+id: 43
+priority: low
+started: 2026-11-21T18:22:48Z
+status: done
+tags:
+- ffi
+- decision
+title: Three libgit2 functions attached locally instead of via Git::Libgit2
+updated: 2026-11-21T18:22:48Z
+---
+
+Found in the 0.007 pre-release audit. Git::Native attaches three functions itself through Git::Libgit2::FFI::ffi()->function: git_remote_pushurl (Remote.pm:870), git_odb_hash (Oid.pm:97), git_config_delete_entry (Config.pm:59). Git::Libgit2 HEAD binds none of them; App::karr attaches git_config_delete_entry itself too. This cuts against git-native-core "never bypass Git::Libgit2".
+
+Decide: bind them in Git::Libgit2 (then pin the version and drop the local attaches), or record the local attach as an accepted pattern in git-native-core. Not a 0.007 blocker.
+
+Committed in 0f91f71: git-native-core records the local Git::Libgit2::FFI::ffi()->function lookup as the accepted pattern (same handle, one file-scoped function object, int returns through check_rc). Finding: App::karr now attaches git_remote_pushurl itself, as Git::Native does, so two distributions attach the same function locally - the threshold for a binding in Git::Libgit2. Whether to bind it is the maintainer's decision; filed as a separate low-priority card, no commitment.
