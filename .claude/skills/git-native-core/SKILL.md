@@ -15,6 +15,24 @@ The CLAUDE.md content is non-negotiable — apply silently, do not restate.
 Touching any of those layers requires going up or down through the same path; never bypass
 `Git::Libgit2` to call libgit2 directly from a wrapper.
 
+The one accepted exception: a function `Git::Libgit2` does not bind may be looked up locally
+through `Git::Libgit2::FFI::ffi()->function`. Current cases: `git_remote_pushurl`
+(`Remote.pm:874`, `_pushurl`), `git_odb_hash` (`Oid.pm:97`, `from_buffer`),
+`git_config_delete_entry` (`Config.pm:59`, `delete`). Conditions, as those three do it:
+
+- **Same handle** — `Git::Libgit2::FFI::ffi()`, the instance `Git::Libgit2` binds on, so the
+  library and its opaque type names (`git_remote`, `git_config`) are the same. Never a second
+  `FFI::Platypus`.
+- **One place per function** — a file-scoped `my $..._fn`, built with `//=` on first use inside
+  the one sub that calls it, under a comment saying `Git::Libgit2` does not bind it. A
+  function object, not `->attach`: nothing goes into the `Git::Libgit2::FFI` namespace.
+- **`int` returns go through `check_rc`** (`Config->delete` maps `GIT_ENOTFOUND` to success
+  first). `git_remote_pushurl` returns a string, no rc — NULL is undef.
+
+A binding in `Git::Libgit2` pays off only once a second distribution needs the same function.
+App::karr is that signal: it attached `git_config_delete_entry` itself until `Config->delete`
+went public, and still attaches `git_remote_pushurl` itself.
+
 ## Memory ownership (CLAUDE.md → "Memory Ownership")
 
 Each Moo wrapper holds exactly one opaque libgit2 handle. `DESTROY` calls the matching
