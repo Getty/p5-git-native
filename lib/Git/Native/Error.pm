@@ -17,6 +17,15 @@ our @EXPORT_OK = qw( check_rc );
 has code    => ( is => 'ro', required => 1 );
 has klass   => ( is => 'ro', default  => 0 );
 
+# http_status: the status code of a refused smart-HTTP request, parsed from
+# the message libgit2 gives it ("unexpected http status code: 403"), else
+# undef. libgit2 exposes nothing but that message (k39).
+has http_status => ( is => 'lazy', init_arg => undef );
+sub _build_http_status {
+  my ($self) = @_;
+  return $self->message =~ /\bunexpected http status code: (\d+)/ ? $1 + 0 : undef;
+}
+
 # Predicates over the libgit2 error `code`, for callers that branch on the
 # kind of failure (`if ($err->is_not_found) {...}`). Curated to the codes
 # that have real consumer use cases; the long tail is reachable via ->code
@@ -98,6 +107,24 @@ against the C<GIT_E*> constants exported by L<Git::Libgit2>.
 The C<git_error_t> category the failure came from (the C<klass> field of
 libgit2's C<git_error>), defaulting to 0. A secondary signal: it says
 which subsystem complained, not what went wrong. Branch on C<code>.
+
+=attr http_status
+
+The HTTP status code of a refused smart-HTTP request, as a number, or
+C<undef> for every other error. A fetch, push, clone or C<list_refs> over
+HTTP(S) that the server answers with an unexpected status fails in libgit2
+with the message
+C<unexpected http status code: 403>; this attribute is that number, parsed
+from the message. Nothing else is read: an error whose message does not carry
+that text has no C<http_status>.
+
+What it cannot do: the response body is B<not> reachable through the public
+API of libgit2 1.9. The HTTP transport reports the status and returns before it
+reads the body, and the body bytes are discarded; the error carries no body, no
+headers and no C<remote:> text the git command line would print. A rate limit
+(for example GitHub's secondary rate limit, a 403) therefore cannot be told
+from a write denial (also a 403): both give the same code, class and message.
+Treat a bare C<403> as ambiguous.
 
 =attr message
 

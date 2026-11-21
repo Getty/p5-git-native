@@ -49,7 +49,7 @@ Git::Native::Reference    name, shorthand, target -> Oid, symbolic_target, is_sy
                           ->symbolic_set_target($refname, message =>?) (symbolic refs)
                           ->delete
 
-Git::Native::Config       ->get_string / ->get_bool / ->set_string / ->delete / ->snapshot
+Git::Native::Config       ->get_string / ->get_bool / ->set_string / ->delete / ->delete_all / ->snapshot
 
 Git::Native::Blob         ->content, ->size, ->oid
 Git::Native::Index        ->entrycount, ->find($path), ->find_prefix($prefix)
@@ -83,7 +83,8 @@ Git::Native::Signature    name, email, when, offset
                           git_signature*, copying the fields out of the struct
 Git::Native::Oid          stringify hex, ->raw (20B), ->short(7), ->from_hex / ->from_raw / ->from_ptr
                           ->from_buffer($bytes, $type)  git hash-object, no repo, git_odb_hash
-Git::Native::Error        isa Throwable::Error; code, klass, message
+Git::Native::Error        isa Throwable::Error; code, klass, message, http_status (parsed, undef unless
+                          "unexpected http status code: N"; no body - libgit2 1.9 drops it)
                           is_not_found / is_exists / is_auth / is_certificate /
                           is_conflict / is_not_fast_forward / is_unborn_branch / is_invalid_spec
                           is_not_matched / is_locked / is_bare_repo / is_ambiguous
@@ -345,6 +346,8 @@ instead the test compiles `offsetof()` against the `git2.h` that
 `skip_all`s, with the reason, when there is no C compiler, no reachable
 header, or when the header's `LIBGIT2_VERSION` disagrees with the loaded
 library.
+
+`t/88-config-delete-all.t` covers `Config->delete_all`: `git_config_delete_multivar` and `set_multivar` segfault on a valueless entry in the level (any regexp), so it walks the local level with a multivar iterator first and refuses a valueless entry next to others; its valueless cases run in a child perl. `t/87-error-http-status.t` covers `Error->http_status` (local 127.0.0.1 server, 403).
 
 `t/82-config-delete.t` covers `Config->delete`. Subtests 9–11, the staleness
 ones, are load-bearing: libgit2 caches the live `git_config*` in the

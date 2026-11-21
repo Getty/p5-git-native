@@ -4,7 +4,7 @@ package Git::Native::Config;
 our $VERSION = '0.007';
 use Moo;
 use Git::Libgit2::FFI ();
-use Git::Libgit2 qw( GIT_ENOTFOUND );
+use Git::Libgit2 qw( GIT_ENOTFOUND GIT_ERROR );
 use Git::Native::Error qw( check_rc );
 
 has _handle => ( is => 'ro', required => 1 );
@@ -51,8 +51,7 @@ my $delete_entry_fn;
 # delete($key): remove the entry from the level libgit2 writes to (the
 # repository's own config file) and return 1. GIT_ENOTFOUND also returns 1 -
 # not set at that level is "already gone", like reference_delete. Everything
-# else throws via check_rc: a multivar (-1, there is no unset-all;
-# git_config_delete_multivar segfaults on a valueless entry, k38), an
+# else throws via check_rc: a multivar (-1; delete_all is the unset-all), an
 # invalid name (GIT_EINVALIDSPEC), a snapshot (GIT_EREADONLY).
 sub delete {
   my ( $self, $key ) = @_;
@@ -72,6 +71,78 @@ sub delete {
   my $rc = $delete_entry_fn->call( $self->_handle, $key );
   return 1 if $rc == GIT_ENOTFOUND;   # not set at the writable level
   check_rc $rc;
+  return 1;
+}
+
+# The functions delete_all needs are not attached by Git::Libgit2::FFI either;
+# looked up once, on first use.
+my %fn;
+sub _fn {
+  my ( $name, $args, $ret ) = @_;
+  return $fn{$name} //= Git::Libgit2::FFI::ffi()->function( $name => $args => $ret );
+}
+
+# delete_all($key): remove every value of a multivar at the repository's own
+# config level and return 1; 1 as well when nothing is set there.
+#
+# git_config_delete_multivar (and git_config_set_multivar) SEGFAULT the whole
+# process as soon as the level holds a valueless entry for the key (`[karr]` +
+# `readonly`, no `=`): the value regexp is matched against a NULL value. Any
+# regexp does it, also one that cannot match the valueless entry (measured,
+# libgit2 1.9.3), so the entries are walked first with a multivar iterator,
+# which hands the NULL back as a plain NULL pointer. A lone valueless entry is
+# an ordinary delete_entry. A valueless entry next to others cannot be removed
+# without the crash, so that case is refused with a Git::Native::Error and the
+# file is left alone (k38).
+sub delete_all {
+  my ( $self, $key ) = @_;
+  # Same refresh as delete: libgit2's cached config does not see writes by
+  # another process, which would make a stale "not found" look like success.
+  check_rc Git::Libgit2::FFI::git_config_snapshot( \my $refreshed, $self->_handle );
+  Git::Libgit2::FFI::git_config_free($refreshed);
+
+  # Walk the repository level only: that is the one delete_multivar works on,
+  # so a valueless entry in the global config is none of its business.
+  my ( $total, $valueless ) = ( 0, 0 );
+  my $rc = _fn( git_config_open_level => [ 'opaque*', 'git_config', 'int' ] => 'int' )
+    ->call( \my $local, $self->_handle, 5 );   # GIT_CONFIG_LEVEL_LOCAL
+  if ( $rc != GIT_ENOTFOUND ) {
+    check_rc $rc;
+    my $new_rc = _fn( git_config_multivar_iterator_new =>
+        [ 'opaque*', 'git_config', 'string', 'string' ] => 'int' )
+      ->call( \my $iter, $local, $key, undef );
+    if ( $new_rc == 0 ) {
+      my $next = _fn( git_config_next => [ 'opaque*', 'opaque' ] => 'int' );
+      my $ffi  = Git::Libgit2::FFI::ffi();
+      while ( ( $rc = $next->call( \my $entry, $iter ) ) == 0 ) {
+        $total++;
+        # git_config_entry starts with name, value; value is NULL for a
+        # valueless entry.
+        $valueless++ unless $ffi->cast( 'opaque', 'opaque[2]', $entry )->[1];
+      }
+      _fn( git_config_iterator_free => ['opaque'] => 'void' )->call($iter);
+    }
+    Git::Libgit2::FFI::git_config_free($local);
+    # not found = nothing at this level; GIT_ITEROVER (-31) ends the walk.
+    check_rc $new_rc unless $new_rc == 0 || $new_rc == GIT_ENOTFOUND;
+    check_rc $rc if $total && $rc != -31;
+  }
+
+  if ($valueless) {
+    if ( $total == 1 ) {
+      return $self->delete($key);
+    }
+    Git::Native::Error->throw(
+      code    => GIT_ERROR,
+      klass   => 7,   # GIT_ERROR_CONFIG
+      message => "cannot delete all values of '$key': it has a valueless entry "
+        . "next to other values and libgit2 crashes on that",
+    );
+  }
+  my $drc = _fn( git_config_delete_multivar => [ 'git_config', 'string', 'string' ] => 'int' )
+    ->call( $self->_handle, $key, '.*' );
+  return 1 if $drc == GIT_ENOTFOUND;
+  check_rc $drc;
   return 1;
 }
 
@@ -158,12 +229,30 @@ includes a key set only in the global config, which the merged view keeps
 answering afterwards, and a key set at both levels, whose global value
 shows through again once the local one is gone.
 
-There is no unset-all: a key with several values (a multivar) throws a
-L<Git::Native::Error> and keeps every value. A name git does not accept
+A key with several values (a multivar) throws a L<Git::Native::Error> and
+keeps every value; L</delete_all> removes those. A name git does not accept
 throws as well (C<is_invalid_spec>), and so does a snapshot, with
 C<GIT_EREADONLY>, even for a key that is not set. C<delete> sees writes made
 by other processes since the config was opened, such as C<git config> in a
 shell or a hand edit of the file.
+
+=method delete_all
+
+  $repo->config->delete_all('remote.origin.fetch');
+
+Remove every value of a key that has several (a multivar) and return 1; it
+removes a single-valued key too. Same scope as L</delete>: the repository's own
+config file only, 1 for a key not set there, a snapshot throws
+C<GIT_EREADONLY>, an invalid name throws (C<is_invalid_spec>), and writes made
+by other processes since the config was opened are seen.
+
+A valueless entry (C<[karr]> then C<readonly>, no C<=>) is the hazard: libgit2
+1.9's C<git_config_delete_multivar> crashes the whole process when the level
+holds one. C<delete_all> walks the values first and never calls it then. A
+key whose only entry is valueless is deleted normally. A valueless entry
+B<next to other values> cannot be removed safely, so that call throws a
+L<Git::Native::Error> (code C<GIT_ERROR>) and leaves the file untouched; remove
+the entries one at a time by hand in that case.
 
 =method snapshot
 

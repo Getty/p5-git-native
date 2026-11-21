@@ -17,7 +17,7 @@ use Git::Libgit2 qw( GIT_ERROR GIT_EINVALIDSPEC GIT_EREADONLY );
 #   * a key not set at that level returns 1 as well (GIT_ENOTFOUND counts as
 #     "already gone", the way reference_delete is idempotent);
 #   * every other libgit2 failure throws a Git::Native::Error;
-#   * there is no unset-all: a multivar is refused, not deleted.
+#   * a multivar is refused by delete; delete_all (t/88) removes it.
 #
 # The load-bearing part is staleness, the same trap as the index (CLAUDE.md,
 # "Index"): libgit2 caches the live git_config* in the repository and hands the
@@ -104,7 +104,7 @@ subtest 'an absent key is already gone: delete returns 1 and does not throw' => 
 };
 
 subtest 'a multivar is refused with a Git::Native::Error and both values survive' => sub {
-  # No unset-all on purpose (see the valueless subtest below for why). The
+  # delete is not the unset-all (delete_all, t/88, is). The
   # file is written before the repository is opened, so this measures the
   # multivar refusal and not the staleness covered further down.
   my ( $init, $dir ) = TestRepo::new_repo();
@@ -128,7 +128,7 @@ subtest 'a valueless boolean entry (karr.readonly) is deleted' => sub {
   # Exactly how karr marks a board read-only: `[karr]` + `readonly` with no
   # `= value`, which git reads as true. This is the entry the card exists for.
   # git_config_delete_multivar segfaults on such an entry (measured, 1.9.3) -
-  # one more reason there is no unset-all.
+  # which is why delete_all (t/88) walks the values first.
   my ( $init, $dir ) = TestRepo::new_repo();
   local_config_file($dir)->append("[karr]\n\treadonly\n");
   my $repo = Git::Native->open("$dir");

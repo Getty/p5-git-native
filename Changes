@@ -1,6 +1,15 @@
 Revision history for Git-Native
 
 {{$NEXT}}
+  - Config: delete_all($key) removes every value of a multivar from the
+    repository's own config file and returns 1, also when nothing is set.
+    A valueless entry (such as a bare [karr] readonly) no longer crashes the
+    process: a lone one is deleted, one next to other values throws a
+    Git::Native::Error and leaves the file untouched.
+  - Error: http_status returns the HTTP status code of a refused smart-HTTP
+    request, parsed from libgit2's "unexpected http status code: N" message,
+    and undef for any other error. libgit2 1.9 does not expose the response
+    body, so a rate limit cannot be told from a write denial (both 403).
   - Repository: reference_delete throws a Git::Native::Error (is_invalid_spec)
     for a name that is not a valid reference name, such as refs/heads/a..b;
     it used to report success. Deleting an absent but valid ref is still a
