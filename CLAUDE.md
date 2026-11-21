@@ -63,7 +63,7 @@ Git::Native::Commit       ->oid, ->message, ->summary, ->time (epoch), ->time_of
                           ->tree, ->tree_oid, ->parent_count, ->parent_oids
 Git::Native::Remote       ->url, ->name
                           ->fetch(refspecs =>, credentials =>, prune =>)
-                          ->push(refspecs =>, credentials =>, prune =>)
+                          ->push(refspecs =>, credentials =>, prune =>, negotiation =>)
                           ->list_refs(credentials =>)
                           fetch / push return a Remote::Result
 Git::Native::Remote::Result  updated  -> [{ ref, from, to, reason }, ...]
@@ -166,7 +166,7 @@ unprivileged namespace may map only your own uid.
   `_connect` call site): `git_remote_ls` needs the ref advertisement, which is
   what upload-pack serves. `GIT_DIRECTION_PUSH` is imported but unused. The
   distinction would only matter against a remote granting write without read
-  (karr ticket 23).
+  (k23).
 
 The credential callback (`git_credential_acquire_cb`) is a
 `FFI::Platypus::Closure`. The C signature has a `git_credential **out`
@@ -201,7 +201,7 @@ somewhere the others do not:
   global => …, xdg => …)` isolates **libgit2 itself**, including the system
   level: `/etc/gitconfig` is compiled in and no environment variable moves it,
   so `git_libgit2_opts(GIT_OPT_SET_SEARCH_PATH)` is the only supported
-  override. Needs `Git::Libgit2 0.006` (karr ticket 13).
+  override. Needs `Git::Libgit2 0.006` (k13).
 - The **`HOME` / `XDG_CONFIG_HOME`** redirect in the `BEGIN` block. No longer
   what isolates the config — the search path does that, verified with `HOME`
   left alone. It stays for the *non*-config things a home directory carries:
@@ -343,7 +343,7 @@ shared cached handle means the held-object check must run *before* the
 fresh-accessor check, or it measures nothing.
 
 `t/75-cert-hostkey-layout.t` pins the three `git_cert_hostkey` field offsets
-`Remote` reads from `Git::Libgit2::cert_hostkey_offsets` (karr #30 moved
+`Remote` reads from `Git::Libgit2::cert_hostkey_offsets` (k30 moved
 them there; they are derived from the ABI's `int` size, since the struct is
 padding-free up to the end of `hash_sha256`), plus the `git_cert_t` /
 `git_cert_ssh_t` values the certificate_check thunk branches on. Their only
@@ -374,6 +374,17 @@ delete.
 
 `t/83-check-rc-stale-message.t` is the regression test for the stale-message
 guard above; each half of the fix turns it red on its own.
+
+`t/78`–`t/81` cover the 0.007 surface. `t/78-blob-utf8.t`: `blob_create_frombuffer`
+stores a UTF-8-flagged string as bytes (`utf8::downgrade`) and croaks above 0xFF,
+instead of cutting the blob off at `length()`. `t/79-push-negotiation.t`: the
+`negotiation =>` veto on `push` (`git_remote_callbacks.push_negotiation`, the only
+hook for `--force-with-lease`-style checks). `t/80-push-negotiation-layout.t`
+pins the callback and `git_push_update` offsets that `Remote` writes and reads;
+like `t/75` it is a compile-time `offsetof()` probe and `skip_all`s, with the
+reason, without a C compiler, a reachable `git2.h`, or a header that matches the
+loaded library. `t/81-oid-from-buffer.t`: `Oid->from_buffer` against
+`git hash-object`.
 
 Known gap, deliberate: the `DEMOLISH` `if $self->{_handle}` false branch in
 every wrapper is unreachable while `_handle` is `required => 1` — that is
@@ -451,7 +462,9 @@ prerequisites.
 - **`file://` URLs:** `"file://$path"` is wrong for `C:/…` (libgit2: "failed
   to resolve path"). Tests build them with `TestRepo::file_url($path)`.
 - **Skipped there, and why:** `t/72-owner-mismatch.t` — Perl reports uid 0
-  for the process and for every path. `t/75-cert-hostkey-layout.t` —
+  for the process and for every path. `t/75-cert-hostkey-layout.t` (and,
+  presumably, `t/80-push-negotiation-layout.t`, same probe; not measured on
+  Windows) —
   `Alien::Libgit2->cflags` answers
   `-I\C:/Users/…/.cpanm/work/…/blib/…/include\`, the build directory with
   stray backslashes, so the probe cannot find `git2.h` although

@@ -141,12 +141,15 @@ sub fetch {
   return Git::Native::Remote::Result->new( updated => \@updated );
 }
 
-# push(refspecs => [...], credentials => sub { ... }, prune => 0|1)
+# push(refspecs => [...], credentials => sub { ... }, prune => 0|1,
+#      negotiation => sub { my (@updates) = @_; ... })
 #
 # Returns a Git::Native::Remote::Result. libgit2 returns 0 even when the
 # server rejected refs (pre-receive hook, protected ref, non-ff on a
 # non-forced refspec); the push_update_reference callback carries the
-# per-ref status the server sent.
+# per-ref status the server sent. negotiation runs once before anything is
+# sent, with one { src_refname, dst_refname, src, dst } hash per update; a
+# false return or a die vetoes the push, which then throws GIT_EUSER.
 sub push {
   my ( $self, %args ) = @_;
   my $original_refspecs = $args{refspecs} // [];
@@ -174,8 +177,9 @@ sub push {
     \@rejected, \@updated, $self->_push_update_targets($refspecs_ref),
   );
 
-  # negotiation: the caller's veto. $neg_state->{called} / {error} tell a
-  # veto from a transport failure once git_remote_push has returned.
+  # negotiation: the caller's veto. $neg_state->{vetoed} tells a veto from a
+  # transport failure once git_remote_push has returned; {error} carries the
+  # message.
   my ( $neg_thunk, $neg_keep, $neg_state );
   if ( $args{negotiation} ) {
     $neg_state = {};
