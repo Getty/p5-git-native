@@ -1,0 +1,26 @@
+---
+claimed_at: 2026-11-21T02:02:16Z
+claimed_by: p5-git-native
+class: standard
+completed: 2026-11-21T02:02:25Z
+created: 2026-11-20T19:27:33Z
+id: 36
+priority: low
+started: 2026-11-21T01:41:44Z
+status: done
+tags:
+- config
+- api
+title: 'Git::Native::Config: delete a config entry'
+updated: 2026-11-21T02:06:55Z
+---
+
+Asked for by App::karr (karr board, k333). karr now keeps a per-clone read-only state in the repository git config and must remove its keys again (`karr readonly off`, the state lifting after a push lands). Git::Native::Config offers get_string, get_bool and set_string but no way to delete an entry, so App::karr::Git::git_config_unset attaches `git_config_delete_entry` itself through Git::Libgit2::FFI and calls it with the private `_handle` of the config object, falling back to `git config --local --unset-all`.
+
+Done looks like: a public method on Git::Native::Config (e.g. `delete($name)`, also unset-all for multivars if cheap) that returns true when the entry is gone afterwards, GIT_ENOTFOUND counting as gone; POD and a test. karr can then drop its private-handle call (file a follow-up on the karr board once released).
+
+Design (orchestrator's choice, not the maintainer's): `delete($name)` over git_config_delete_entry, refreshing the live config first (a throwaway snapshot) — measured on 1.9.3: libgit2 caches the live config in the repository, so after an external `git config` write the delete answers GIT_ENOTFOUND while the key is still on disk, which would make 'ENOTFOUND = gone' a lie. No unset-all: git_config_delete_multivar segfaults on a valueless entry -> k38. Stale error message on the snapshot path -> k37.
+
+2026-11-21 02:02 Done in commit 10dbe51 (branch worktree-k36-config-delete, not pushed, not released): Git::Native::Config->delete($key) - removes the entry from the repository's own config file and returns 1, also when the key is not set there (GIT_ENOTFOUND = already gone); multivar, invalid name and snapshot throw a Git::Native::Error. Refreshes the live config via a throwaway snapshot before deleting. Tests: t/82-config-delete.t, 11 subtests; prove -lr t/ Files=57 Tests=594 PASS (t/40, t/41 and one t/35 subtest skipped, no env vars). Follow-ups: k37 (stale error message on the snapshot path), k38 (no unset-all; git_config_delete_multivar segfaults on a valueless entry). Pending release: once this ships, App::karr can drop its private _handle call in App::karr::Git::git_config_unset - file that follow-up on the karr board only after the release, not before.
+
+2026-11-21 02:06 Merged into main as fd4d0bc (10dbe51 with a code comment fixed), pushed, installed with dzil install.
