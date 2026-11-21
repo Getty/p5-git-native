@@ -42,8 +42,9 @@ Revision history for Git-Native
   - The tarball ships .claude/ and CLAUDE.md at the top level again, and a
     snapshot of the agent context this release was built with under
     misc/agent-context/. Nothing from either is installed.
-  - Prerequisites match what lib/ loads: FFI::Platypus 2.00, Digest::SHA,
-    Exporter, MIME::Base64 and Scalar::Util are declared, and Path::Tiny
+  - Prerequisites match what lib/ and t/ load: FFI::Platypus 2.00,
+    Digest::SHA, Exporter, MIME::Base64, Scalar::Util and, for the tests,
+    File::Find, File::Temp, FindBin and Test::More are declared; Path::Tiny
     is a test prerequisite only.
   - SEE ALSO sections for Git::Native::Error, Git::Native::Repository and
     Git::Native::Remote::Result.
