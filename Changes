@@ -1,6 +1,12 @@
 Revision history for Git-Native
 
 {{$NEXT}}
+  - Config: delete($key) removes an entry from the repository's own config
+    file and returns 1, also when the key is not set there, so a second call
+    is harmless. The global and system levels are never touched: a key set
+    there stays visible. A multivar, an invalid name or a snapshot throws a
+    Git::Native::Error. Writes by other processes since the config was
+    opened - git config in a shell, a hand edit - are seen.
   - Oid: from_buffer($bytes, $type) computes the oid of a Perl buffer as a
     blob, tree, commit or tag, the same as git hash-object -t TYPE, with no
     repository and nothing written. The buffer is bytes (NUL included); a

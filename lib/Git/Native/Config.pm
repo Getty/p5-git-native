@@ -44,6 +44,37 @@ sub set_string {
   return $self;
 }
 
+# git_config_delete_entry is not among the functions Git::Libgit2::FFI
+# attaches; it is only needed here, so it is looked up on first use.
+my $delete_entry_fn;
+
+# delete($key): remove the entry from the level libgit2 writes to (the
+# repository's own config file) and return 1. GIT_ENOTFOUND also returns 1 -
+# not set at that level is "already gone", like reference_delete. Everything
+# else throws via check_rc: a multivar (-1, there is no unset-all;
+# git_config_delete_multivar segfaults on a valueless entry, k38), an
+# invalid name (GIT_EINVALIDSPEC), a snapshot (GIT_EREADONLY).
+sub delete {
+  my ( $self, $key ) = @_;
+  $delete_entry_fn //= Git::Libgit2::FFI::ffi()->function(
+    git_config_delete_entry => [ 'git_config', 'string' ] => 'int',
+  );
+  # Refresh first. libgit2 caches the live git_config* in the repository, and
+  # git_config_delete_entry looks the key up in the cached entries without
+  # re-reading the file - after a write by another process it answers
+  # GIT_ENOTFOUND with the key still on disk, which the idempotent return
+  # below would report as success (measured, libgit2 1.9.3; t/82 subtests
+  # 9-11). 1.9.3 has no public git_config_refresh; taking a snapshot re-reads
+  # the changed files into the live config as a side effect, so take one and
+  # drop it.
+  check_rc Git::Libgit2::FFI::git_config_snapshot( \my $refreshed, $self->_handle );
+  Git::Libgit2::FFI::git_config_free($refreshed);
+  my $rc = $delete_entry_fn->call( $self->_handle, $key );
+  return 1 if $rc == GIT_ENOTFOUND;   # not set at the writable level
+  check_rc $rc;
+  return 1;
+}
+
 # snapshot(): a read-only point-in-time copy. Returns a fresh Config.
 sub snapshot {
   my $self = shift;
@@ -65,6 +96,8 @@ sub DEMOLISH {
 
   say $repo->config_string('user.name');    # 'Ada' (fresh snapshot read)
 
+  $cfg->delete('user.name');                # 1, also when already unset
+
   my $snap = $repo->config_snapshot;
   say $snap->get_string('user.email');
 
@@ -76,7 +109,8 @@ automatically when the object goes out of scope.
 Reads go through C<get_string>, which libgit2 only supports reliably on a
 B<snapshot> config — get one via L<Git::Native::Repository/config_snapshot>
 or the L<Git::Native::Repository/config_string> convenience. Writes
-(C<set_string>) require a live config from L<Git::Native::Repository/config>.
+(C<set_string>, C<delete>) require a live config from
+L<Git::Native::Repository/config>.
 
 A repository config sees the merged view git itself would use: the
 repository's own C<config> file plus the global and system levels.
@@ -111,6 +145,25 @@ L<Git::Native::Error> rather than coming back C<undef>.
 Write C<$value> under C<$key> and return the config. Needs a live config —
 a snapshot is read-only and throws. The write lands in the highest-priority
 writable level, i.e. the repository's own config file.
+
+=method delete
+
+  $repo->config->delete('user.name');
+
+Remove C<$key> and return 1. Like L</set_string> it needs a live config and
+works on the highest-priority writable level, the repository's own config
+file; the global and system levels are never touched. A key that is not set
+at that level returns 1 as well, so deleting twice is harmless. That
+includes a key set only in the global config, which the merged view keeps
+answering afterwards, and a key set at both levels, whose global value
+shows through again once the local one is gone.
+
+There is no unset-all: a key with several values (a multivar) throws a
+L<Git::Native::Error> and keeps every value. A name git does not accept
+throws as well (C<is_invalid_spec>), and so does a snapshot, with
+C<GIT_EREADONLY>, even for a key that is not set. C<delete> sees writes made
+by other processes since the config was opened, such as C<git config> in a
+shell or a hand edit of the file.
 
 =method snapshot
 

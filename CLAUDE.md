@@ -49,7 +49,7 @@ Git::Native::Reference    name, shorthand, target -> Oid, symbolic_target, is_sy
                           ->symbolic_set_target($refname, message =>?) (symbolic refs)
                           ->delete
 
-Git::Native::Config       ->get_string / ->get_bool / ->set_string / ->snapshot
+Git::Native::Config       ->get_string / ->get_bool / ->set_string / ->delete / ->snapshot
 
 Git::Native::Blob         ->content, ->size, ->oid
 Git::Native::Index        ->entrycount, ->find($path), ->find_prefix($prefix)
@@ -342,6 +342,19 @@ instead the test compiles `offsetof()` against the `git2.h` that
 `skip_all`s, with the reason, when there is no C compiler, no reachable
 header, or when the header's `LIBGIT2_VERSION` disagrees with the loaded
 library.
+
+`t/82-config-delete.t` covers `Config->delete`. Subtests 9–11, the staleness
+ones, are load-bearing: libgit2 caches the live `git_config*` in the
+repository, and `git_config_delete_entry` looks the key up in that cache, so
+after a write from outside the process (git CLI, hand edit) it answers
+`GIT_ENOTFOUND` with the key still on disk, which the idempotent return
+would call success. `delete` therefore takes and frees a snapshot first,
+which re-reads changed files (1.9.3 has no public `git_config_refresh`).
+Remove those two lines and exactly 9–11 go red, on their on-disk checks,
+while `delete` still returns 1 (measured, libgit2 1.9.3). Their order is
+load-bearing too: `config_string` / `config_snapshot` refresh the same cached
+object, so nothing may read the config between the external write and the
+delete.
 
 Known gap, deliberate: the `DEMOLISH` `if $self->{_handle}` false branch in
 every wrapper is unreachable while `_handle` is `required => 1` — that is
