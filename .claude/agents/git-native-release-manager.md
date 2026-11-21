@@ -39,17 +39,19 @@ You never run `dzil release`. That gate is the maintainer's, explicitly.
    `our $VERSION`, and `[@Author::GETTY]` rewrites all of them on release (no
    `version_finder`). Verify they all name the same next version, one above the last
    release tag.
-3. **`cpanfile`** — every dependency pinned to its **latest released CPAN version**, not the
-   version in any Getty-authored source repo. Run `cpanm --info Module::Name` for each. The
-   Getty-authored ones to recheck on every release:
-   - `Git::Libgit2` (this repo's foundation — `cpanm --info Git::Libgit2`)
-   - `FFI::Platypus` (loaded directly by `lib/`, not only through `Git::Libgit2`)
-   - `Moo`
-   - `Throwable::Error`
-   - `Path::Tiny` (test only)
-   - `Test2::V0` (test only)
-   - `namespace::clean`
-   - `Carp`
+3. **`cpanfile`** — pin policy per `getty-perl-core`: only **Getty-authored** distributions
+   are pinned current — to their **latest released CPAN version**
+   (`cpanm --info Module::Name | tail -1` → `GETTY/…`), not stale, not omitted, and never to
+   the `$VERSION` of a sibling checkout (that is the next, unreleased one; only a change
+   spanning both repos pins it, and then the sibling is released first). Getty-authored
+   here, verified by CPAN author `GETTY`:
+   - `Git::Libgit2` (this repo's foundation)
+   - `Alien::Libgit2` (test only)
+   Every other dependency is someone else's. Its version is a **deliberate minimum** — what
+   the code needs (`FFI::Platypus 2.00`, `Moo 2.000000`) — or it is unpinned on purpose
+   (`Carp`, `Throwable::Error`, `namespace::clean`, `Path::Tiny`, `Test2::V0`, …). Do not
+   raise those to the latest CPAN release and do not report them as stale. A newly added
+   dependency is classified by its `cpanm --info` author, not by guess.
 4. **Test suite** — `dzil test` (or `prove -lr t/`) runs clean. Live-network tests
    (`t/40-remote-ssh.t`, `t/41-remote-https.t`) skip without env vars — that's fine, but the
    skip must be a SKIP, not a fail.
