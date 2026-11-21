@@ -120,7 +120,9 @@ and the thread-local error is never cleared between calls, so `last` can hold
 an EARLIER call's message (measured: `git_config_delete_entry` on a snapshot,
 `GIT_EREADONLY`). Two guards, `t/83-check-rc-stale-message.t` pins both: call
 sites that can fail silently call `git_error_clear` right before the FFI call
-(`Config->delete`), and `check_rc` drops the message when libgit2's `klass` is
+(`Config->delete`; `Revwalker->push_range`, whose `@{-N}` with fewer than N
+checkouts in the HEAD reflog is a silent `GIT_ENOTFOUND` from revparse, k48),
+and `check_rc` drops the message when libgit2's `klass` is
 0 (`GIT_ERROR_NONE`), falling back to `<unknown libgit2 error>`. The code stays
 right either way; only the message was ever at risk. `check_rc` does not clear
 globally: `git_error_clear` before `git_libgit2_init` segfaults.
@@ -374,6 +376,10 @@ delete.
 
 `t/83-check-rc-stale-message.t` is the regression test for the stale-message
 guard above; each half of the fix turns it red on its own.
+`t/84-push-range-stale-message.t` does the same for `push_range` (k48; the
+audit of every wrapped call found no other site a pre-call clear fixes). Its HEAD
+control is load-bearing: if the fixture's HEAD does not resolve, revparse fails
+on that lookup with a message of its own and the file passes without the fix.
 
 `t/78`–`t/81` cover the 0.007 surface. `t/78-blob-utf8.t`: `blob_create_frombuffer`
 stores a UTF-8-flagged string as bytes (`utf8::downgrade`) and croaks above 0xFF,

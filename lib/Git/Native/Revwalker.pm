@@ -26,7 +26,17 @@ sub push_oid {
 sub push_head { check_rc Git::Libgit2::FFI::git_revwalk_push_head( $_[0]->_handle ); $_[0] }
 sub push_ref  { check_rc Git::Libgit2::FFI::git_revwalk_push_ref(  $_[0]->_handle, $_[1] ); $_[0] }
 sub push_glob { check_rc Git::Libgit2::FFI::git_revwalk_push_glob( $_[0]->_handle, $_[1] ); $_[0] }
-sub push_range { check_rc Git::Libgit2::FFI::git_revwalk_push_range( $_[0]->_handle, $_[1] ); $_[0] }
+sub push_range {
+  my ( $self, $range ) = @_;
+  # An @{-N} side with fewer than N checkouts in the HEAD reflog makes
+  # git_revparse return GIT_ENOTFOUND without setting an error (libgit2 1.9.3
+  # revparse.c:204, the same in 1.5.1), and git_revwalk_push_range passes it
+  # straight up - so check_rc would attach whatever an earlier call left
+  # behind. Clear first, as Config->delete does (k37, k48).
+  Git::Libgit2::FFI::git_error_clear();
+  check_rc Git::Libgit2::FFI::git_revwalk_push_range( $self->_handle, $range );
+  return $self;
+}
 
 sub hide_oid {
   my ( $self, $oid ) = @_;
