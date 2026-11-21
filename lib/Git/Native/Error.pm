@@ -56,14 +56,24 @@ around BUILDARGS => sub {
 # re-throw it as a Throwable Git::Native::Error so no raw libgit2 error
 # object leaks above this layer. Every FFI int-return goes through here, so
 # callers in Git::Native import check_rc from THIS module, not Git::Libgit2.
+#
+# The thread-local error carries no rc: a successful call does not clear it,
+# and a few functions return a negative rc without setting one, so what
+# git_error_last holds may belong to an EARLIER call (k37). check_rc cannot
+# tell; a call site that libgit2 is known to fail silently clears the state
+# right before the call (git_error_clear - see Config->delete). An empty state
+# is klass 0, GIT_ERROR_NONE (1.9.3 answers a static "no error"; a NULL from
+# git_error_last decodes as klass 0 too): leave the message out so BUILDARGS
+# supplies '<unknown libgit2 error>' instead of passing "no error" off as the
+# reason. The code is unaffected.
 sub check_rc {
   my ($rc) = @_;
   return $rc if !defined $rc || $rc >= 0;
   my $low = Git::Libgit2::Error->last($rc);
   __PACKAGE__->throw(
-    code    => $low->code,
-    klass   => $low->klass,
-    message => $low->message,
+    code  => $low->code,
+    klass => $low->klass,
+    $low->klass ? ( message => $low->message ) : (),
   );
 }
 
@@ -129,7 +139,10 @@ Treat a bare C<403> as ambiguous.
 =attr message
 
 The error text libgit2 produced, e.g. C<"cannot set OID on symbolic
-reference">. Inherited from L<Throwable::Error>.
+reference">. Inherited from L<Throwable::Error>. When libgit2 returned the
+code without setting an error of its own, it is C<< <unknown libgit2 error> >>
+rather than libgit2's C<"no error">. Being free text, it is not something to
+branch on; C<code> is.
 
 =func check_rc
 
@@ -141,6 +154,13 @@ libgit2's thread-local error (a low-level L<Git::Libgit2::Error>) and
 re-throws it as a C<Git::Native::Error>. Every wrapper in the distribution
 routes its FFI int-returns through this so no raw libgit2 error object
 escapes the API.
+
+libgit2's thread-local error says nothing about which call set it: it is not
+cleared on success, and a few functions fail without setting one. So the
+message is only as fresh as the error state was before the call. Where libgit2
+is known to fail silently, the wrapper clears that state first
+(C<git_error_clear>), and C<check_rc> then reports the empty state as
+C<< <unknown libgit2 error> >>. The code is libgit2's return value either way.
 
 =method is_not_found / is_exists / is_auth / is_certificate / is_conflict / is_not_fast_forward / is_unborn_branch / is_invalid_spec / is_not_matched / is_locked / is_bare_repo / is_ambiguous / is_owner_mismatch
 

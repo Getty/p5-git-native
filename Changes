@@ -30,6 +30,9 @@ Revision history for Git-Native
   - Repository: fix blob_create_frombuffer silently truncating a string with
     Perl's UTF-8 flag set. Each character is stored as one byte; one above
     0xFF croaks, since a blob has no encoding to guess.
+  - Error: a libgit2 failure that sets no message of its own, such as
+    Config->delete on a snapshot, reports <unknown libgit2 error> instead of
+    an earlier, unrelated call's message; the code is unaffected.
   - Remote: known_hosts lookups follow OpenSSH - [host]:port off port 22,
     with the port of the URL (the push URL on a push), the bare name only
     when that port has no entry, honouring !host and `@revoked` entries.

@@ -115,6 +115,16 @@ or compare `->code` against the `GIT_E*` constants exported by `Git::Libgit2`.
 `klass` (the `git_error_t` category) is decoded by `Git::Libgit2 0.005`
 and is a secondary signal, not the primary discriminator.
 
+libgit2 does not always call `git_error_set` before returning a negative rc,
+and the thread-local error is never cleared between calls, so `last` can hold
+an EARLIER call's message (measured: `git_config_delete_entry` on a snapshot,
+`GIT_EREADONLY`). Two guards, `t/83-check-rc-stale-message.t` pins both: call
+sites that can fail silently call `git_error_clear` right before the FFI call
+(`Config->delete`), and `check_rc` drops the message when libgit2's `klass` is
+0 (`GIT_ERROR_NONE`), falling back to `<unknown libgit2 error>`. The code stays
+right either way; only the message was ever at risk. `check_rc` does not clear
+globally: `git_error_clear` before `git_libgit2_init` segfaults.
+
 Not every failure arrives as a `Git::Native::Error`. Argument checks that
 never reach libgit2 `croak` instead, deliberately: `Oid->from_hex` /
 `from_raw`, `Repository->object_by_prefix` (too-short prefix),
@@ -361,6 +371,9 @@ while `delete` still returns 1 (measured, libgit2 1.9.3). Their order is
 load-bearing too: `config_string` / `config_snapshot` refresh the same cached
 object, so nothing may read the config between the external write and the
 delete.
+
+`t/83-check-rc-stale-message.t` is the regression test for the stale-message
+guard above; each half of the fix turns it red on its own.
 
 Known gap, deliberate: the `DEMOLISH` `if $self->{_handle}` false branch in
 every wrapper is unreachable while `_handle` is `required => 1` — that is

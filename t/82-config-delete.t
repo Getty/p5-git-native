@@ -184,9 +184,9 @@ subtest 'an invalid name throws GIT_EINVALIDSPEC' => sub {
 };
 
 subtest 'a snapshot refuses delete with GIT_EREADONLY, even for an absent key' => sub {
-  # The message is deliberately not asserted: libgit2 returns -40 here without
-  # setting an error of its own, so ->message is whatever the previous libgit2
-  # call left behind (measured: a stat failure from taking the snapshot).
+  # The message is not asserted here: libgit2 returns -40 without setting an
+  # error of its own, and that the message is then the '<unknown libgit2
+  # error>' default, not an earlier call's leftover, is t/83's (k37).
   my ( $repo, $dir ) = TestRepo::new_repo();
   $repo->config->set_string( 'own.k', 'x' );
 

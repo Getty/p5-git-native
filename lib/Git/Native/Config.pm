@@ -68,6 +68,12 @@ sub delete {
   # drop it.
   check_rc Git::Libgit2::FFI::git_config_snapshot( \my $refreshed, $self->_handle );
   Git::Libgit2::FFI::git_config_free($refreshed);
+  # On a read-only config (a snapshot) git_config_delete_entry returns
+  # GIT_EREADONLY without setting an error (libgit2 1.9.3 config.c), so
+  # check_rc would attach whatever the refresh above or an earlier call left
+  # behind - measured: a stat failure on the global .gitconfig (k37). Clear
+  # first, so the error state check_rc reads belongs to this call.
+  Git::Libgit2::FFI::git_error_clear();
   my $rc = $delete_entry_fn->call( $self->_handle, $key );
   return 1 if $rc == GIT_ENOTFOUND;   # not set at the writable level
   check_rc $rc;
