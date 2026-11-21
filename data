@@ -1,0 +1,22 @@
+---
+class: standard
+completed: 2026-11-21T18:22:21Z
+created: 2026-11-21T01:47:57Z
+id: 37
+priority: low
+started: 2026-11-21T18:22:21Z
+status: done
+tags:
+- error
+- drift
+title: check_rc can attach a stale libgit2 error message
+updated: 2026-11-21T18:22:21Z
+---
+
+Found while working k36 (libgit2 1.9.3, Alien::Libgit2 0.003 share). `check_rc` builds the Git::Native::Error from `Git::Libgit2::Error->last`, i.e. `git_error_last()`. libgit2 does not always call `git_error_set` before returning a negative rc, and nobody clears the thread-local error between calls, so the message can belong to an EARLIER failure.
+
+Measured: `git_config_delete_entry` on a config snapshot returns -40 (GIT_EREADONLY) while `git_error_last` still holds the previous call's "could not find key 'glob.only' to delete". The thrown Error has the right code and a message naming an unrelated key.
+
+Done looks like: decide whether check_rc (or the call sites) clear the error before the FFI call (`git_error_clear` is bound in Git::Libgit2::FFI) or check_rc drops/flags a message that cannot be attributed to this rc; a regression test reproducing the stale message (the snapshot delete above is a deterministic repro once k36 lands). Codes stay the discriminator either way.
+
+Committed in 20dd43e: check_rc leaves the message out at klass 0 (<unknown libgit2 error> default), Config->delete calls git_error_clear before git_config_delete_entry, regression test t/83-check-rc-stale-message.t, CLAUDE.md + Changes entry. Remaining risk filed as a separate card.
