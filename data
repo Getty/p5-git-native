@@ -1,0 +1,19 @@
+---
+claimed_at: 2026-11-21T21:36:43Z
+claimed_by: git-native-worker
+class: standard
+completed: 2026-11-21T21:36:43Z
+created: 2026-11-21T19:01:53Z
+id: 50
+priority: low
+started: 2026-11-21T21:32:22Z
+status: done
+tags:
+- refs
+title: reference_delete accepts an invalid refname as success
+updated: 2026-11-21T21:36:43Z
+---
+
+reference_delete('refs/heads/a..b') reports success, because libgit2 does not validate the name on that path. The idempotent behaviour (an absent ref is success, like git update-ref -d) is documented in CLAUDE.md and pinned by the edge-case tests. Open decision: should an invalid name still throw (is_invalid_spec, GIT_EINVALIDSPEC) instead of passing as a no-op delete? Found during the k48 audit.
+
+Decision applied: reference_delete throws is_invalid_spec for invalid names; absent valid ref stays idempotent. t/86, t/63 unchanged, CLAUDE.md updated.
