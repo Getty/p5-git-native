@@ -1,0 +1,17 @@
+---
+class: standard
+completed: 2026-11-21T18:23:02Z
+created: 2026-11-21T03:15:14Z
+id: 44
+priority: medium
+started: 2026-11-21T18:23:02Z
+status: done
+tags:
+- agents
+title: 'release-manager checklist: pin policy contradicts getty-perl-core'
+updated: 2026-11-21T18:23:02Z
+---
+
+Found in the 0.007 pre-release audit, by the release-manager itself. Its checklist says to pin every dependency to the latest version and calls FFI::Platypus, Moo and Throwable::Error Getty-authored; they are not. getty-perl-core pins only Getty-authored dists to current; FFI::Platypus 2.00 and Moo 2.000000 are deliberate minimums. The cpanfile is right, the agent definition is wrong - fix it at its source (skilletor / getty-agent-team) rather than in the installed copy.
+
+Committed in d2d3c6f: checklist item 3 follows getty-perl-core - only Getty-authored dists (Git::Libgit2, Alien::Libgit2; cpanm --info author GETTY, checked) pinned current, FFI::Platypus 2.00 / Moo 2.000000 deliberate minimums, the rest unpinned on purpose. Fixed in the tracked .claude/agents file: skilletor.json installs no agents here, so that file is its own source. Not checked: whether the getty-agent-team template carries the same wrong list.
