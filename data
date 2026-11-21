@@ -1,0 +1,17 @@
+---
+class: standard
+completed: 2026-11-21T18:23:28Z
+created: 2026-11-21T03:26:25Z
+id: 46
+priority: low
+started: 2026-11-21T18:23:28Z
+status: done
+tags:
+- ci
+title: 'CI: actions/checkout@v4 runs on forced Node 24'
+updated: 2026-11-21T18:23:28Z
+---
+
+Found while fixing k41. The last green macOS run warned that actions/checkout@v4 (built for Node 20) is "forced to run on Node.js 24". This is not tied to the runner image; linux.yml uses the same action version. Check whether a newer checkout major exists and bump both workflows together.
+
+Committed in fb3aa89: actions/checkout@v4 -> @v7 in linux.yml (4 uses) and macos.yml (3 uses). v7 tag exists upstream, latest release v7.0.1. Not yet run on CI - the commit is local, unpushed.
