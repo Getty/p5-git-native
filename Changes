@@ -18,55 +18,33 @@ Revision history for Git-Native
     not a Git::Native::Credential, the Git::Native::Error thrown by fetch,
     push or list_refs now names the callback failure ("credential callback
     died: ...") instead of an unrelated earlier libgit2 message.
-  - Config: delete($key) removes an entry from the repository's own config
-    file and returns 1, also when the key is not set there, so a second call
-    is harmless. The global and system levels are never touched: a key set
-    there stays visible. A multivar, an invalid name or a snapshot throws a
-    Git::Native::Error. Writes by other processes since the config was
-    opened - git config in a shell, a hand edit - are seen.
-  - Oid: from_buffer($bytes, $type) computes the oid of a Perl buffer as a
-    blob, tree, commit or tag, the same as git hash-object -t TYPE, with no
-    repository and nothing written. The buffer is bytes (NUL included); a
-    character above 0xFF and an unknown type croak. (GitHub issue 2)
-  - Remote: push takes a negotiation callback, called after the remote
-    advertised its refs and before anything is sent, with the remote's
-    current value (src) and the new one (dst) of every ref about to be
-    written. A false return or an exception aborts the push with a
-    Git::Native::Error of code GIT_EUSER, so a caller can implement the
-    equivalent of git push --force-with-lease, which libgit2 lacks.
-  - Repository: blob_create_frombuffer stores a string with Perl's UTF-8
-    flag set whole. It used to hand libgit2 the internal UTF-8 buffer but
-    the character count as length, so the blob was silently cut off and a
-    valid oid came back. Each character is now stored as one byte; a
-    character above 0xFF croaks, since a blob has no encoding to guess.
-  - Remote: the SSH host-key check looks a host up as OpenSSH files it in
-    known_hosts - the bare name on port 22, [host]:port on any other,
-    hashed or plain, with the port of the URL (the push URL for a push).
-    A port with no entry falls back to the bare host's key; an entry for
-    [host]:port counts for that port only. Warnings suggest ssh-keyscan -p.
-  - Remote: in known_hosts a negated pattern (!host) excludes the host
-    from its entry, and a key listed in a @revoked line for the host is
-    rejected even if another line carries it.
-  - Remote: on Windows SSH host keys are looked up under %USERPROFILE% as
-    well as %HOME%, and system-wide in %PROGRAMDATA%\ssh\ssh_known_hosts.
-    cmd.exe and PowerShell set no HOME, so every SSH host was reported as
-    not in known_hosts there. Without any home directory only the
-    system-wide file is read. The warning for an unknown host names the
-    files that were searched.
-  - Windows is documented (Git::Native/WINDOWS, README): the missing HOME,
-    file:// URLs for drive paths, and the CA bundle HTTPS needs with a
-    Strawberry-built libgit2. The test suite passes there.
-  - The tarball carries a snapshot of the agent context under
-    misc/agent-context/ - CLAUDE.md and the agents, rules and skills this
-    release was built with. Nothing from it is installed.
+  - Config: delete($key) removes a key from the repository's own config
+    file, also one another process just wrote, and returns 1 even if unset.
+    Global and system values stay. A multivar, bad name or snapshot throws.
+  - Oid: from_buffer($bytes, $type) hashes bytes, NULs included, as a blob,
+    tree, commit or tag like git hash-object -t TYPE, with no repository
+    and no write; a character above 0xFF or an unknown type croaks (GH #2).
+  - Remote: push takes negotiation => $coderef, called with each ref's
+    remote (src) and new (dst) oid before anything is sent; a false return
+    or an exception aborts with GIT_EUSER, the hook for --force-with-lease.
+  - Repository: fix blob_create_frombuffer silently truncating a string with
+    Perl's UTF-8 flag set. Each character is stored as one byte; one above
+    0xFF croaks, since a blob has no encoding to guess.
+  - Remote: known_hosts lookups follow OpenSSH - [host]:port off port 22,
+    with the port of the URL (the push URL on a push), the bare name only
+    when that port has no entry, honouring !host and `@revoked` entries.
+  - Windows: the test suite passes, and Git::Native/WINDOWS documents the
+    missing HOME (known_hosts is also read under %USERPROFILE% and
+    %PROGRAMDATA%\ssh), file:// URLs for drive paths and the HTTPS CA bundle.
+  - The tarball ships .claude/ and CLAUDE.md at the top level again, and a
+    snapshot of the agent context this release was built with under
+    misc/agent-context/. Nothing from either is installed.
   - Prerequisites match what lib/ loads: FFI::Platypus 2.00, Digest::SHA,
     Exporter, MIME::Base64 and Scalar::Util are declared, and Path::Tiny
     is a test prerequisite only.
   - SEE ALSO sections for Git::Native::Error, Git::Native::Repository and
     Git::Native::Remote::Result.
-  - Requires Git::Libgit2 0.008 (git_stash_save, git_odb_new and the size_t
-    counts of git_merge_base_many and git_merge_analysis bound as libgit2
-    declares them); the tests require Alien::Libgit2 0.003.
+  - Requires Git::Libgit2 0.008; the tests require Alien::Libgit2 0.003.
 
 0.006     2026-08-30 14:35:09Z
   - Remote: read the git_cert_hostkey field offsets from
