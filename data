@@ -1,0 +1,23 @@
+---
+claimed_at: 2026-11-21T21:36:42Z
+claimed_by: git-native-worker
+class: standard
+completed: 2026-11-21T21:36:42Z
+created: 2026-11-21T02:36:12Z
+id: 39
+priority: low
+started: 2026-11-21T21:35:04Z
+status: done
+tags:
+- remote
+- error
+title: 'Push errors: expose the HTTP status and response body of a failed smart-HTTP
+  request'
+updated: 2026-11-21T21:36:42Z
+---
+
+Request from karr (its card k345). libgit2 reports a refused smart-HTTP push only as "unexpected http status code: 403"; the response body is dropped. The git CLI prints it ("remote: You have exceeded a secondary rate limit." above "returned error: 403"), so a caller can tell a rate limit from a write denial there, but not on the native route. karr therefore now classes a bare native 403 as ambiguous (not denied), which means a clone whose token really lacks write access is not recognised as denied when only the native transport is available (KARR_NO_CLI_FALLBACK, no git binary). Done looks like: a failed push/fetch over smart HTTP exposes the HTTP status code and (a bounded prefix of) the response body or the remote: sideband lines on the Git::Native::Error, e.g. $err->http_status / $err->http_body, if libgit2 1.9 makes that reachable (a custom transport/subtransport callback or the http response hooks); if it does not, say so on this card.
+
+Investigated against libgit2 1.9.3 (cross-checked 1.5.0 and main 142570e). The body is not reachable through any public callback: http.c handle_response sets "unexpected http status code: %d" (klass GIT_ERROR_HTTP, code -1) and returns before reading the body; httpclient.c on_body discards body bytes when no output buffer is set, and git_http_response has no body field. sideband_progress only runs inside the smart protocol after a 200 response (smart_protocol.c 736/1008), so it never fires on a 403. The git CLI "remote:" lines are not sideband: remote-curl.c show_http_message prints a text/plain HTTP body with a "remote: " prefix, only on the info/refs GET. Measured over 127.0.0.1: rate-limit and write-denial 403s give an identical (-1, 34, message) triple for push and fetch, at the GET and the POST stage. Reachable today: the status code (parse the message); the text of an ERR pkt-line (klass NET, "remote error: ..."); hook output of a 200 push through sideband_progress (not exposed by Git::Native). Options: (1) http_status parsed from the message, ~half a day, does not separate rate limit from denial; (2) opt-in best-effort body capture via git_trace_set(GIT_TRACE_TRACE), which sees raw socket reads: works when headers and body arrive in one read, fails when split (both measured); process-global, undocumented format, must drop "Sending request" traces (Authorization header); ~2 days; needs a live check against the real host before promising anything; (3) a full custom smart subtransport, HTTP stack in Perl: 1-2 weeks, not proportionate; (4) upstream libgit2 patch, maintainer decision. Until (2) lands, a bare native 403 stays ambiguous, as karr already treats it. Scratch measurements are not in the repo.
+
+2026-11-21 21:34 Option 1 done: Git::Native::Error->http_status, parsed from 'unexpected http status code: N', undef otherwise (lib/Git/Native/Error.pm, t/87-error-http-status.t incl. a real 403 from a local 127.0.0.1 server). Finding, documented in the POD: the response body is NOT reachable through libgit2 1.9 public API (http.c returns before reading the body, httpclient discards it, git_http_response has no body field), so a rate limit cannot be told from a write denial - both are an identical (-1, klass 34, message) triple. No http_body attribute. Options 2-4 not done; a bare native 403 stays ambiguous for karr.
