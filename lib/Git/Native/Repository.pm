@@ -5,7 +5,7 @@ our $VERSION = '0.007';
 use Moo;
 use Carp ();
 use Git::Libgit2 qw(
-  GIT_EMODIFIED GIT_ENOTFOUND GIT_EUNBORNBRANCH GIT_ITEROVER
+  GIT_EINVALIDSPEC GIT_EMODIFIED GIT_ENOTFOUND GIT_EUNBORNBRANCH GIT_ITEROVER
   GIT_OBJECT_ANY GIT_OBJECT_BLOB GIT_OBJECT_TREE
   GIT_OBJECT_COMMIT GIT_OBJECT_TAG
   GIT_OID_MINPREFIXLEN
@@ -95,6 +95,16 @@ sub reference_set_target {
 
 sub reference_delete {
   my ( $self, $name ) = @_;
+  # git_reference_remove does not validate the name: an invalid one such as
+  # refs/heads/a..b reports success like an absent ref. An absent but valid
+  # ref stays a no-op; an invalid name is a caller's bug and throws (k50).
+  my $vrc = Git::Libgit2::FFI::git_reference_name_is_valid( \my $valid, $name // '' );
+  check_rc $vrc;
+  Git::Native::Error->throw(
+    code    => GIT_EINVALIDSPEC,
+    klass   => 4,    # GIT_ERROR_REFERENCE
+    message => "the given reference name '" . ( $name // '' ) . "' is not valid",
+  ) unless $valid;
   check_rc Git::Libgit2::FFI::git_reference_remove( $self->_handle, $name );
   return $self;
 }
@@ -752,7 +762,10 @@ Delete a reference by full name and return the repository. B<Idempotent>:
 deleting a reference that does not exist succeeds, exactly like
 C<git update-ref -d>. That is deliberately unlike C<reference> and C<tag>,
 which throw C<is_not_found> for something missing — so a successful
-C<reference_delete> is no evidence the reference was ever there.
+C<reference_delete> is no evidence the reference was ever there. A name that
+is not a valid reference name at all (C<refs/heads/a..b>) is a different
+matter: it throws a L<Git::Native::Error> for which C<is_invalid_spec> is
+true, rather than passing as a no-op delete.
 
 =method head
 

@@ -484,6 +484,28 @@ sub _build_push_options {
 # and a Perl exception unwinding across them is undefined behaviour. Every
 # failure mode reports via warn and returns a negative rc, which libgit2
 # propagates out of git_remote_fetch/push for check_rc to throw properly.
+# git_error_set_str is not among the functions Git::Libgit2::FFI attaches;
+# looked up on first use (the same pattern as Config->delete). GIT_ERROR_CALLBACK
+# is 26 in libgit2 1.5 through 1.9.
+my $error_set_str_fn;
+use constant _GIT_ERROR_CALLBACK => 26;
+
+# Give libgit2 a message of our own before a thunk returns a negative rc.
+# Without it check_rc reads git_error_last(), which libgit2 neither clears on
+# success nor sets here, and reports an earlier lookup's message (k49). Never
+# dies: it runs inside a C callback.
+sub _set_callback_error {
+  my ($message) = @_;
+  eval {
+    $error_set_str_fn //= Git::Libgit2::FFI::ffi()->function(
+      git_error_set_str => [ 'int', 'string' ] => 'int',
+    );
+    $error_set_str_fn->call( _GIT_ERROR_CALLBACK, $message );
+    1;
+  } or warn "could not set the libgit2 error message: $@";
+  return;
+}
+
 sub _make_credential_thunk {
   my ($user_cb) = @_;
   my $ffi = Git::Libgit2::FFI::ffi();
@@ -498,14 +520,19 @@ sub _make_credential_thunk {
       );
     };
     if ($@) {
-      warn "credential callback died: $@";
+      my $err = $@;
+      warn "credential callback died: $err";
+      ( my $first = "$err" ) =~ s/\s+\z//;
+      _set_callback_error("credential callback died: $first");
       return -1;
     }
     return GIT_PASSTHROUGH unless defined $cred;
     unless ( Scalar::Util::blessed($cred)
              && $cred->isa('Git::Native::Credential') ) {
-      warn "credentials callback must return a Git::Native::Credential "
-         . "or undef, got " . _describe_value($cred) . "\n";
+      my $msg = "credentials callback must return a Git::Native::Credential "
+              . "or undef, got " . _describe_value($cred);
+      warn "$msg\n";
+      _set_callback_error($msg);
       return -1;
     }
 
@@ -1087,7 +1114,8 @@ Perl exception is undefined behaviour. The wrapper therefore contains every
 failure — if your coderef dies, or returns anything other than a credential
 or C<undef>, the reason is reported with C<warn> and an error code is
 returned to libgit2, so the surrounding C<fetch> / C<push> fails with a
-L<Git::Native::Error>. Catch what you can inside the callback if you want a
+L<Git::Native::Error> whose message names the callback failure ("credential
+callback died: ..."). Catch what you can inside the callback if you want a
 better message than that.
 
 SSH host keys are verified against C<known_hosts> by this module (libgit2

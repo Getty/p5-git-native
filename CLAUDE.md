@@ -273,7 +273,10 @@ guards (`t/62`), `_known_hosts_match` including `@revoked` / `@cert-authority`
 refspecs" (`t/66`). Two behaviours found while writing them and pinned as
 documented rather than changed: `reference_delete` is idempotent (libgit2
 returns 0 for an absent ref, like `git update-ref -d`), unlike `reference()`
-and `tag()` which throw not-found.
+and `tag()` which throw not-found. The idempotence covers an absent but
+*valid* name only: libgit2 does not validate the name on that path, so
+`refs/heads/a..b` also returned 0; `reference_delete` now checks the name
+first and throws `is_invalid_spec` (`t/86`).
 
 `t/67`–`t/69` came out of that layer: `signature_default` had no test at all
 and was returning placeholder attributes, the credential thunk let a `die`

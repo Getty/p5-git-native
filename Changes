@@ -1,6 +1,14 @@
 Revision history for Git-Native
 
 {{$NEXT}}
+  - Repository: reference_delete throws a Git::Native::Error (is_invalid_spec)
+    for a name that is not a valid reference name, such as refs/heads/a..b;
+    it used to report success. Deleting an absent but valid ref is still a
+    harmless success.
+  - Remote: when the credential callback dies or returns something that is
+    not a Git::Native::Credential, the Git::Native::Error thrown by fetch,
+    push or list_refs now names the callback failure ("credential callback
+    died: ...") instead of an unrelated earlier libgit2 message.
   - Config: delete($key) removes an entry from the repository's own config
     file and returns 1, also when the key is not set there, so a second call
     is harmless. The global and system levels are never touched: a key set
