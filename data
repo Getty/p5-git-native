@@ -1,0 +1,20 @@
+---
+claimed_at: 2026-11-21T21:36:43Z
+claimed_by: git-native-worker
+class: standard
+completed: 2026-11-21T21:36:43Z
+created: 2026-11-21T18:49:10Z
+id: 49
+priority: low
+started: 2026-11-21T21:32:22Z
+status: done
+tags:
+- error
+- remote
+title: A dying credential callback surfaces an unrelated libgit2 message
+updated: 2026-11-21T21:36:43Z
+---
+
+Found while researching k39, same family as k37. When the user credential coderef dies, the credential thunk returns -1 without calling git_error_set, so check_rc reports a stale message from an earlier lookup: code -1, klass 7, "config value http.followRedirects was not found". t/52 and t/68 pin the thunk but not the message end to end. Possible fix: git_error_set_str(GIT_ERROR_CALLBACK, ...) before the return -1 (exported by libgit2 1.9.3 in sys/errors.h, not bound in Git::Libgit2, so a local FFI lookup per the git-native-core pattern), or clear the error first. Done looks like: a test where the coderef dies and the thrown Error carries a message naming the callback failure, red without the fix. Related: k48 audits the wrapped calls for the same stale-message pattern; coordinate so the two do not fix it twice.
+
+Fixed in Remote.pm: _set_callback_error sets GIT_ERROR_CALLBACK via local git_error_set_str lookup for the dying-coderef and wrong-return cases. t/85 red without the fix.
