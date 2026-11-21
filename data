@@ -1,0 +1,17 @@
+---
+class: standard
+completed: 2026-11-21T18:23:14Z
+created: 2026-11-21T03:15:19Z
+id: 45
+priority: low
+started: 2026-11-21T18:23:14Z
+status: done
+tags:
+- cpanfile
+title: 'cpanfile: core modules used only by tests are undeclared'
+updated: 2026-11-21T18:23:14Z
+---
+
+Found in the 0.007 pre-release audit. lib/ declares its core modules (Exporter, Scalar::Util, ...), the tests do not: Test::More (14 files), FindBin (16), File::Temp, File::Find. Consistency only, nothing breaks.
+
+Committed in 5242b5b: File::Find, File::Temp, FindBin, Test::More as unpinned test requirements; Changes folds them into the existing prerequisites entry.
