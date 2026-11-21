@@ -1,0 +1,31 @@
+---
+claimed_at: 2026-11-21T03:33:53Z
+claimed_by: git-native-release-manager
+class: standard
+completed: 2026-11-21T03:33:53Z
+created: 2026-11-21T03:14:49Z
+id: 40
+priority: high
+started: 2026-11-21T03:20:53Z
+status: done
+tags:
+- release
+- changes
+title: 'Changes: clean up the {{$NEXT}} section before 0.007'
+updated: 2026-11-21T03:36:38Z
+---
+
+Found in the 0.007 pre-release audit. GitHub::CreateRelease publishes the section verbatim as release notes, and Changes is in allow_dirty, so the fix goes in its own commit before the release.
+
+- Line 31: `@revoked` unquoted -> mentions a GitHub user. Backtick it (the 0.006 section already does).
+- Line 50: the reason given for Git::Libgit2 0.008 is wrong. Git::Native calls none of git_stash_save / git_odb_new / git_merge_base_many / git_merge_analysis (grep over lib/ and t/ is empty); the full suite passes against Git::Libgit2 0.007 sources (Files=57 Tests=594). Keep the pin (current-pin rule for Getty-authored dists), drop the bracketed reason.
+- Six entries run 4-6 lines (style: 1-3); lines 21 and 35 narrate history ("It used to…", "was reported") instead of the end state; the three known_hosts bullets and the two Windows bullets each cover one topic and could merge.
+- Line 39 names README as a place Windows is documented - the shipped README is the dzil stub, the Windows text is in README.md which does not ship.
+- Line 13 "(GitHub issue 2)": Git::Libgit2 writes `GH #1`; `GH #2` would match and autolink.
+- Agent-context bullet: does not say that .claude/ and CLAUDE.md ship at the top level again (25def19 undid the 0.006 exclusion).
+
+Owner: git-native-release-manager.
+
+Committed as fce8fd9 (Changes only). dzil build + dzil test --all green on the final text (Files=59 Tests=614, t/40 and t/41 skipped without env vars). Not pushed.
+
+Review: dzil test --all on 4d4f458 (final Changes text) - Files=59 Tests=614 PASS; t/40 and t/41 skipped without env vars. Closes the gap in the note above, where the full run predated the last wording fix.
