@@ -1,0 +1,25 @@
+---
+claimed_at: 2026-11-21T21:36:42Z
+claimed_by: git-native-worker
+class: standard
+completed: 2026-11-21T21:36:42Z
+created: 2026-11-21T01:48:15Z
+id: 38
+priority: low
+started: 2026-11-21T21:35:04Z
+status: done
+tags:
+- config
+- api
+title: 'Config: unset-all for multivars (git_config_delete_multivar segfaults on a
+  valueless entry)'
+updated: 2026-11-21T21:36:42Z
+---
+
+Split off k36, which asked for unset-all "if cheap" — it is not. k36 ships `Config->delete($name)` over `git_config_delete_entry`, which refuses a multivar (rc -1, "entry is not unique due to being a multivar") and leaves it intact.
+
+The obvious unset-all, `git_config_delete_multivar($cfg, $name, ".*")`, works on a two-valued key but SEGFAULTS the process on a valueless boolean entry (`[karr]\n\treadonly`, no `=`) — measured on libgit2 1.9.3 (Alien::Libgit2 0.003 share). Presumably the value regexp is matched against a NULL value; not verified in the libgit2 source.
+
+Done looks like (only once someone needs it): an unset-all that cannot crash on a valueless entry — e.g. walk the values with a multivar iterator first and refuse/handle NULL values before calling delete_multivar, or another route — with a test that includes the valueless case in a subprocess so a regression shows as a red test, not a dead harness. The staleness refresh k36 needed before a delete applies here too.
+
+2026-11-21 21:34 Implemented as Config->delete_all (lib/Git/Native/Config.pm, t/88-config-delete-all.t). Measured on libgit2 1.9.3: git_config_delete_multivar AND git_config_set_multivar segfault whenever the level holds a valueless entry for the key, with any regexp (even '^one$' or one matching nothing), so a pre-filter cannot save a mixed key. delete_all walks the LOCAL level (git_config_open_level + multivar iterator, NULL value = valueless) first: lone valueless entry -> delete_entry; valueless next to other values -> refused with Git::Native::Error (GIT_ERROR, file untouched); otherwise delete_multivar '.*'. Valueless entries in the global config are ignored. Valueless cases run in a child perl in the test. Open: a mixed key cannot be cleaned natively.
