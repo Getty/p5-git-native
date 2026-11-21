@@ -18,16 +18,16 @@ jobs:
       DYLD_FALLBACK_LIBRARY_PATH: /opt/homebrew/lib:/usr/local/lib
       TEST_GIT_NATIVE_HTTPS_URL: https://github.com/getty/p5-www-chain.git
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Git::Libgit2 and Alien::Libgit2 are on CPAN, but CI builds them from
       # the sibling repos' HEAD so a fix here is exercised before its release.
       - name: Checkout Alien::Libgit2
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: getty/p5-alien-libgit2
           path: vendor/alien-libgit2
       - name: Checkout Git::Libgit2
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: getty/p5-git-libgit2
           path: vendor/git-libgit2
