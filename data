@@ -1,0 +1,21 @@
+---
+class: standard
+completed: 2026-11-21T19:01:44Z
+created: 2026-11-21T18:23:47Z
+id: 48
+priority: low
+started: 2026-11-21T19:01:44Z
+status: done
+tags:
+- error
+title: 'check_rc: audit the wrapped calls for negative rcs that set no libgit2 message'
+updated: 2026-11-21T19:01:44Z
+---
+
+Remaining risk after k37 (20dd43e). check_rc reads git_error_last(), which libgit2 neither clears on success nor sets for every negative rc. k37 added two guards: git_error_clear right before the FFI call at a known silent call site, and the <unknown libgit2 error> default at klass 0.
+
+Known so far: git_config_delete_entry on a snapshot (GIT_EREADONLY, fixed in Config->delete); git_config_set_multivar, git_config_delete_multivar and git_config_lock fail the same way but are not wrapped. Wherever a wrapped call can fail silently and has no git_error_clear before it, the message may still be an earlier call's. The code is correct either way.
+
+Done looks like: the wrapped FFI calls checked against libgit2 source (1.5 floor, 1.9) for negative returns without git_error_set; each one found gets a git_error_clear before the call and a test in the style of t/83.
+
+Committed as a9e724b (Clear the libgit2 error before push_range). The audit found exactly one case: Revwalker->push_range with an @{-N} the HEAD reflog cannot resolve, now cleared before the call and pinned by t/84-push-range-stale-message.t. Every other wrapped call that can fail sets a message of its own. Open: the credential thunk (k49); @{u} with the remote keys set is a libgit2 limit, not something a pre-call clear fixes; libgit2 1.5.1 was read in source only, not measured.
