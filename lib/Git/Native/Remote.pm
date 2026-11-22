@@ -892,16 +892,10 @@ sub _ssh_port {
   return _ssh_port_from_url($url);
 }
 
-# git_remote_pushurl is not among the functions Git::Libgit2::FFI attaches;
-# it is only needed here, so it is looked up on first use. undef when the
-# remote has no push URL of its own.
-my $pushurl_fn;
+# The remote's push URL, undef when it has none of its own.
 sub _pushurl {
   my ($self) = @_;
-  $pushurl_fn //= Git::Libgit2::FFI::ffi()->function(
-    git_remote_pushurl => ['git_remote'] => 'string',
-  );
-  return $pushurl_fn->call( $self->_handle );
+  return Git::Libgit2::FFI::git_remote_pushurl( $self->_handle );
 }
 
 # Port of an SSH remote URL, 22 unless the URL names another one. The forms

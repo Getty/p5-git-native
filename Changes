@@ -1,6 +1,8 @@
 Revision history for Git-Native
 
 {{$NEXT}}
+  - Require Git::Libgit2 0.009 and use its git_remote_pushurl binding instead
+    of attaching the function locally.
   - Config: delete_all($key) removes every value of a multivar from the
     repository's own config file and returns 1, also when nothing is set.
     A valueless entry (such as a bare [karr] readonly) no longer crashes the
