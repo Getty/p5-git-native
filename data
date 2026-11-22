@@ -1,0 +1,24 @@
+---
+block_reason: waits for Git::Libgit2 card 23
+blocked: true
+claimed_at: 2026-11-22T06:36:09Z
+claimed_by: git-native-worker
+class: standard
+completed: 2026-11-22T06:36:09Z
+created: 2026-11-21T18:23:36Z
+id: 47
+priority: low
+started: 2026-11-22T06:36:09Z
+status: done
+tags:
+- ffi
+- decision
+title: 'Git::Libgit2: bind git_remote_pushurl (two distributions attach it locally)'
+updated: 2026-11-22T06:36:09Z
+---
+
+From k43. Git::Native (Remote.pm, _pushurl) and App::karr both look up git_remote_pushurl locally through Git::Libgit2::FFI::ffi()->function, because Git::Libgit2 does not bind it. git-native-core names a second distribution needing the same function as the threshold for a binding in Git::Libgit2; that threshold is now reached.
+
+Open decision for the maintainer, no commitment: bind it in Git::Libgit2 (then pin that version here and drop the local lookup), or keep the local lookups. Returns a string, no rc; NULL is undef.
+
+Cross-repo: filed on the Git::Libgit2 board as its card 23. Nothing to do here until that lands and a Git::Libgit2 version is released (the release waits for the maintainer); then pin it and drop the local attach in Remote.pm.
