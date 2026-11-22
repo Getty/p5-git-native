@@ -1,0 +1,27 @@
+---
+claimed_at: 2026-11-21T03:34:04Z
+claimed_by: git-native-worker
+class: standard
+completed: 2026-11-22T05:03:44Z
+created: 2026-11-21T03:14:56Z
+id: 41
+priority: high
+started: 2026-11-21T03:20:58Z
+status: done
+tags:
+- ci
+title: 'macOS CI: runs-on macos-14 is rejected by GitHub'
+updated: 2026-11-22T05:03:44Z
+---
+
+Found in the 0.007 pre-release audit. .github/workflows/macos.yml:11 has `runs-on: macos-14`; GitHub rejects it ("The configuration macos-14-arm64-us-default is not supported") and every run since 2026-11-13 is cancelled after 1-2s. Last green macOS run: 4aa6c72 (2026-11-03). Config->delete (fd4d0bc) and both dependency bumps (Git::Libgit2 0.008, Alien::Libgit2 0.003) never ran on macOS.
+
+Done looks like: a supported runner label, one green macOS run on main. Ideally before the 0.007 release.
+
+Worker: runs-on macos-14 -> macos-26 (pinned; GitHub retired macos-14 on 2026-11-02 per the changelog, keeps the two newest macOS versions; macos-15 is the fallback if 26 is red for image reasons). No other image dependency in the workflow. YAML parses (YAML::XS, YAML::PP, PyYAML); actionlint not installed. Correction: first rejected run was 2026-11-10 (42888600528), not 2026-11-13. Uncommitted; a green run needs a push, which waits for the maintainer. Side note: actions/checkout@v4 warns about the forced Node 24, also in linux.yml - not part of this card.
+
+Committed as 4d4f458 (.github/workflows/macos.yml only). Waiting for push + green macOS run.
+
+Hash corrected: committed as b08b288 (rebased onto frank's work), pushed to main 2026-11-22 (e71c8f7). Waiting for a green macOS run.
+
+Green macOS run 44987253665 on main (e71c8f7).
