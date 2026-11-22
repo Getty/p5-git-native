@@ -1,0 +1,11 @@
+{"action":"handoff","agent":"git-native-worker","detail":"review","task_id":49,"ts":"2026-11-21T21:32:22Z"}
+{"action":"handoff","agent":"git-native-worker","detail":"review","task_id":50,"ts":"2026-11-21T21:32:22Z"}
+{"action":"edit","agent":"Torsten Raudssus","detail":"backlog","task_id":38,"ts":"2026-11-21T21:34:56Z"}
+{"action":"edit","agent":"Torsten Raudssus","detail":"backlog","task_id":39,"ts":"2026-11-21T21:34:57Z"}
+{"action":"move","agent":"git-native-worker","detail":"review","task_id":38,"ts":"2026-11-21T21:35:04Z"}
+{"action":"move","agent":"git-native-worker","detail":"review","task_id":39,"ts":"2026-11-21T21:35:04Z"}
+{"action":"move","agent":"git-native-worker","detail":"done","task_id":38,"ts":"2026-11-21T21:36:42Z"}
+{"action":"move","agent":"git-native-worker","detail":"done","task_id":39,"ts":"2026-11-21T21:36:42Z"}
+{"action":"move","agent":"git-native-worker","detail":"done","task_id":49,"ts":"2026-11-21T21:36:43Z"}
+{"action":"move","agent":"git-native-worker","detail":"done","task_id":50,"ts":"2026-11-21T21:36:43Z"}
+{"action":"move","agent":"git-native-worker","detail":"done","task_id":47,"ts":"2026-11-22T06:36:09Z"}
