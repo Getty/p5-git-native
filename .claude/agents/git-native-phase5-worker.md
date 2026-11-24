@@ -2,11 +2,10 @@
 name: git-native-phase5-worker
 description: "Git::Native Phase 5 general-purpose surface specialist — clone (no-bare / no-auth-callback quirks), status (git_status_foreach with a Perl closure, git_diff_file layout), tag() undef-on-lightweight, tag_names() walker (git_strarray unpack), refname validation, head_detached / set_head. Delegate here for changes to Git::Native->clone, Git::Native::Repository->status / status_for_path / tag / tag_names / set_head, or Git::Native::reference_name_is_valid. Leaves a commit-ready tree; never commits — commits belong to git-native-release-manager."
 model: opus
-briefing:
-  skills:
-    - git-native-core
-    - getty-perl-core
-    - getty-perl-moo
+skills:
+  - git-native-core
+  - getty-perl-core
+  - getty-perl-moo
 ---
 
 You are the git-native-phase5-worker for the **Git::Native** CPAN distribution — the

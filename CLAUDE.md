@@ -512,7 +512,7 @@ principle in the shared rule `agent-delegation` (skilletor bundle
 | Write / extend tests | `git-native-test-writer` |
 | Commits, `Changes`, card → done, pre-release audit | `git-native-release-manager` |
 
-The agents carry their skills via `briefing.skills` (see `.claude/agents/`); the main
+The agents carry their skills via `skills:` (see `.claude/agents/`); the main
 agent delegates rather than loading them. Only `git-native-core` is tracked under
 `.claude/skills/`; the shared skills are installed there by skilletor from the sources in
 `.claude/skilletor.json` and are git-ignored.

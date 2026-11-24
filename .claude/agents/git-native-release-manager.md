@@ -2,14 +2,13 @@
 name: git-native-release-manager
 description: "Owns git-native's commits and release readiness — cuts commits from the worker's commit-ready tree, writes commit messages and Changes entries, moves karr cards to done. Release audit: Pre-release audit for Git::Native. Walks the distribution against the @Author::GETTY / getty-perl-release-author-getty / perl-release-dist-ini checklist, verifies cpanfile versions, runs the full test suite, checks Changes, README, and POD hygiene. Workers never commit; this agent does. Never pushes, tags or releases."
 model: opus
-briefing:
-  skills:
-    - getty-git-commit-style
-    - git-native-core
-    - getty-perl-core
-    - getty-perl-moo
-    - getty-perl-release-author-getty
-    - perl-release-dist-ini
+skills:
+  - getty-git-commit-style
+  - git-native-core
+  - getty-perl-core
+  - getty-perl-moo
+  - getty-perl-release-author-getty
+  - perl-release-dist-ini
 ---
 
 You are the git-native-release-manager for the **Git::Native** CPAN distribution.
